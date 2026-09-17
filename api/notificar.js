@@ -9,10 +9,20 @@ function textoValido(valor) {
 
   return texto.length ? texto : null;
 }
+// ==========================================
+// LEITURA DAS MENSAGENS DA UMBLER
+// ==========================================
 
-// Procura o texto dentro de uma mensagem,
-// mesmo que a estrutura da Umbler mude um pouco.
 function extrairTexto(mensagem) {
+  // Se a mensagem foi editada, usamos o texto mais recente.
+  const textoEditado =
+    textoValido(mensagem?.latestEdit?.content) ||
+    textoValido(mensagem?.LatestEdit?.Content);
+
+  if (textoEditado) {
+    return textoEditado;
+  }
+
   const candidatos = [
     mensagem?.content,
     mensagem?.Content,
@@ -22,66 +32,110 @@ function extrairTexto(mensagem) {
     mensagem?.Body,
     mensagem?.message,
     mensagem?.Message,
-    mensagem?.caption,
-    mensagem?.Caption,
+
+    // Caso seja mídia com legenda
+    mensagem?.file?.caption,
+    mensagem?.File?.Caption,
+    mensagem?.thumbnail?.caption,
+    mensagem?.Thumbnail?.Caption,
   ];
 
   for (const valor of candidatos) {
     if (typeof valor === "string") {
       const texto = textoValido(valor);
 
-      if (texto) return texto;
+      if (texto) {
+        return texto;
+      }
     }
+  }
 
-    if (valor && typeof valor === "object") {
-      const texto =
-        textoValido(valor.text) ||
-        textoValido(valor.Text) ||
-        textoValido(valor.content) ||
-        textoValido(valor.Content) ||
-        textoValido(valor.body) ||
-        textoValido(valor.Body);
+  // Algumas interações podem vir como botão selecionado.
+  const botoes =
+    mensagem?.buttons ||
+    mensagem?.Buttons;
 
-      if (texto) return texto;
+  if (Array.isArray(botoes)) {
+    const selecionado = botoes.find(
+      (botao) =>
+        botao?.selected === true ||
+        botao?.Selected === true
+    );
+
+    const textoBotao =
+      textoValido(selecionado?.text) ||
+      textoValido(selecionado?.Text);
+
+    if (textoBotao) {
+      return textoBotao;
     }
   }
 
   return null;
 }
 
-// Identifica quem enviou a mensagem.
-function extrairOrigem(mensagem) {
-  const candidatos = [
-    mensagem?.source,
-    mensagem?.Source,
-    mensagem?.senderType,
-    mensagem?.SenderType,
-    mensagem?.origin,
-    mensagem?.Origin,
-    mensagem?.sender?.type,
-    mensagem?.Sender?.Type,
-  ];
 
-  for (const valor of candidatos) {
-    if (typeof valor === "string" && valor.trim()) {
-      return valor.trim().toLowerCase();
-    }
+// Identifica de quem veio a mensagem.
+function extrairOrigem(mensagem) {
+  const source =
+    mensagem?.source ??
+    mensagem?.Source;
+
+  if (
+    typeof source === "string" &&
+    source.trim()
+  ) {
+    return source
+      .trim()
+      .toLowerCase();
+  }
+
+  // Fallback importante:
+  // mensagens recebidas do cliente podem possuir fromContact.
+  if (
+    mensagem?.fromContact?.id ||
+    mensagem?.FromContact?.Id ||
+    mensagem?.FromContact?.id
+  ) {
+    return "contact";
+  }
+
+  if (
+    mensagem?.sentByOrganizationMember?.id ||
+    mensagem?.SentByOrganizationMember?.Id
+  ) {
+    return "member";
+  }
+
+  if (
+    mensagem?.botInstance?.id ||
+    mensagem?.BotInstance?.Id
+  ) {
+    return "bot";
   }
 
   return "";
 }
 
-// Data da mensagem para colocarmos na ordem correta.
+
+// Data real do evento da mensagem.
 function extrairData(mensagem) {
   const candidatos = [
+    mensagem?.eventAtUTC,
+    mensagem?.EventAtUTC,
+
     mensagem?.createdAtUTC,
     mensagem?.CreatedAtUTC,
+
     mensagem?.eventDate,
     mensagem?.EventDate,
+
     mensagem?.createdAt,
     mensagem?.CreatedAt,
+
     mensagem?.timestamp,
     mensagem?.Timestamp,
+
     mensagem?.date,
     mensagem?.Date,
   ];
@@ -99,19 +153,23 @@ function extrairData(mensagem) {
   return 0;
 }
 
-// Procura automaticamente o array de mensagens
-// retornado pela API da Umbler.
-function encontrarMensagens(objeto) {
-  if (!objeto || typeof objeto !== "object") {
+
+// Localiza o histórico retornado pela Umbler.
+function encontrarMensagens(chat) {
+  if (!chat || typeof chat !== "object") {
     return [];
   }
 
-  // Tentamos primeiro os campos mais prováveis.
+  // PRIMEIRO: estrutura utilizada pelo GET do chat.
   const diretos = [
-    objeto.messages,
-    objeto.Messages,
-    objeto.lastMessages,
-    objeto.LastMessages,
+    chat.latestMessages,
+    chat.LatestMessages,
+
+    // Mantemos fallbacks por compatibilidade.
+    chat.messages,
+    chat.Messages,
+    chat.lastMessages,
+    chat.LastMessages,
   ];
 
   for (const candidato of diretos) {
@@ -120,7 +178,8 @@ function encontrarMensagens(objeto) {
     }
   }
 
-  // Se não encontrar, procura dentro do objeto.
+  // Último fallback: procurar arrays relacionados
+  // a mensagens em qualquer nível do JSON.
   let melhorArray = [];
 
   function procurar(valor, nomeCampo = "") {
@@ -129,8 +188,11 @@ function encontrarMensagens(objeto) {
     }
 
     if (Array.isArray(valor)) {
+      const nome =
+        nomeCampo.toLowerCase();
+
       if (
-        nomeCampo.toLowerCase().includes("message") &&
+        nome.includes("message") &&
         valor.length > melhorArray.length
       ) {
         melhorArray = valor;
@@ -148,38 +210,72 @@ function encontrarMensagens(objeto) {
     }
   }
 
-  procurar(objeto);
+  procurar(chat);
 
   return melhorArray;
 }
 
-// Retorna somente as últimas mensagens do CLIENTE.
-function pegarUltimasMensagensCliente(chat, quantidade = 3) {
-  const mensagens = encontrarMensagens(chat);
+
+// Retorna somente as últimas mensagens enviadas PELO CLIENTE.
+function pegarUltimasMensagensCliente(
+  chat,
+  quantidade = 3
+) {
+  const mensagens =
+    encontrarMensagens(chat);
 
   const tratadas = mensagens
     .map((mensagem, indice) => {
+      const origem =
+        extrairOrigem(mensagem);
+
+      const veioDoContato =
+        origem.includes("contact") ||
+        origem.includes("contato") ||
+        Boolean(
+          mensagem?.fromContact?.id ||
+          mensagem?.FromContact?.Id ||
+          mensagem?.FromContact?.id
+        );
+
       return {
-        texto: extrairTexto(mensagem),
-        origem: extrairOrigem(mensagem),
-        data: extrairData(mensagem),
+        texto:
+          extrairTexto(mensagem),
+
+        origem,
+
+        veioDoContato,
+
+        data:
+          extrairData(mensagem),
+
         indice,
+
         privada:
           mensagem?.isPrivate === true ||
           mensagem?.IsPrivate === true,
       };
     })
-    .filter((mensagem) => {
-      if (!mensagem.texto) return false;
-      if (mensagem.privada) return false;
 
-      // A Umbler normalmente identifica mensagens
-      // do cliente como Contact.
-      return (
-        mensagem.origem.includes("contact") ||
-        mensagem.origem.includes("contato")
-      );
+    .filter((mensagem) => {
+      // Precisa ter conteúdo textual.
+      if (!mensagem.texto) {
+        return false;
+      }
+
+      // Ignora notas internas.
+      if (mensagem.privada) {
+        return false;
+      }
+
+      // SOMENTE mensagens do cliente.
+      if (!mensagem.veioDoContato) {
+        return false;
+      }
+
+      return true;
     })
+
     .sort((a, b) => {
       if (a.data && b.data) {
         return a.data - b.data;
@@ -188,25 +284,33 @@ function pegarUltimasMensagensCliente(chat, quantidade = 3) {
       return a.indice - b.indice;
     });
 
-  // Evita repetir mensagens idênticas.
+
+  // Evita mensagens duplicadas.
   const semDuplicados = [];
 
   for (const mensagem of tratadas) {
-    const jaExiste = semDuplicados.some(
-      (item) => item.texto === mensagem.texto
-    );
+    const jaExiste =
+      semDuplicados.some(
+        (item) =>
+          item.texto === mensagem.texto
+      );
 
     if (!jaExiste) {
       semDuplicados.push(mensagem);
     }
   }
 
+
+  // Somente as últimas N mensagens.
   return semDuplicados
     .slice(-quantidade)
     .map((mensagem) => {
-      // Evita uma notificação gigantesca.
+      // Limita mensagens enormes.
       if (mensagem.texto.length > 300) {
-        return mensagem.texto.slice(0, 297) + "...";
+        return (
+          mensagem.texto.slice(0, 297) +
+          "..."
+        );
       }
 
       return mensagem.texto;
