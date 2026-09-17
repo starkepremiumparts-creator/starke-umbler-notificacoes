@@ -333,10 +333,12 @@ export default async function handler(req, res) {
     // 5. BUSCAR A CONVERSA NA UMBLER
     // ==========================================
 
-    const urlChat =
-      `https://app-utalk.umbler.com/api/v1/chats/${encodeURIComponent(
-        conversaId
-      )}/`;
+const urlChat =
+  `https://app-utalk.umbler.com/api/v1/chats/${encodeURIComponent(
+    conversaId
+  )}/?organizationId=${encodeURIComponent(
+    organizationId
+  )}`;
 
     const respostaChat = await fetch(
       urlChat,
