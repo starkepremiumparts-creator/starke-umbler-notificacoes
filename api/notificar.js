@@ -308,18 +308,17 @@ export default async function handler(req, res) {
 
     let toPhone;
 
-    if (
-      regiaoNormalizada.includes("santos")
-    ) {
+    if (regiaoNormalizada.includes("santos")) {
       toPhone =
         process.env.CONSULTOR_SANTOS_PHONE;
-    }
 
-    if (
-      regiaoNormalizada.includes("campinas")
-    ) {
+    } else if (regiaoNormalizada.includes("campinas")) {
       toPhone =
         process.env.CONSULTOR_CAMPINAS_PHONE;
+
+    } else if (regiaoNormalizada.includes("sorocaba")) {
+      toPhone =
+        process.env.CONSULTOR_SOROCABA_PHONE;
     }
 
     if (!toPhone) {
