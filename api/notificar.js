@@ -553,7 +553,12 @@ export default async function handler(
       textoValido(
         body.conversaId
       );
-
+    
+    console.error(
+      "CHAT ID RECEBIDO:",
+      conversaId
+      );
+    
     const regiao =
       textoValido(
         body.regiao
