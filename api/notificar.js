@@ -334,7 +334,7 @@ function pegarUltimasMensagensCliente(
   const encontrados =
     coletarObjetosMensagem(chat);
 
-  console.log(
+  console.error(
     "Diagnóstico do chat:",
     {
       camposPrincipais:
@@ -451,7 +451,7 @@ function pegarUltimasMensagensCliente(
     unicas.push(item);
   }
 
-  console.log(
+  console.error(
     "Mensagens do cliente encontradas:",
     {
       quantidade:
