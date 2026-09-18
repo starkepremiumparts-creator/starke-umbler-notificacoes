@@ -87,9 +87,17 @@ export default async function handler(req, res) {
       ) ||
       "Solicitação não informada";
 
-    const regiao =
-      textoValido(body.regiao) ||
-      "Central";
+    const filial =
+  textoValido(body.filial);
+
+const regiao =
+  filial === "santos"
+    ? "Santos e Região"
+    : filial === "campinas"
+    ? "Campinas e Região"
+    : filial === "sorocaba"
+    ? "Sorocaba e Região"
+    : "Central";
 
     // ==========================================
     // 4. VARIÁVEIS DA VERCEL
@@ -120,29 +128,20 @@ export default async function handler(req, res) {
     // 5. DESCOBRIR QUAL CONSULTOR RECEBERÁ
     // ==========================================
 
-    const regiaoNormalizada =
-      regiao.toLowerCase();
-
     let toPhone = null;
 
-    if (
-      regiaoNormalizada.includes("santos")
-    ) {
-      toPhone =
-        process.env.CONSULTOR_SANTOS_PHONE;
+if (filial === "santos") {
+  toPhone =
+    process.env.CONSULTOR_SANTOS_PHONE;
 
-    } else if (
-      regiaoNormalizada.includes("campinas")
-    ) {
-      toPhone =
-        process.env.CONSULTOR_CAMPINAS_PHONE;
+} else if (filial === "campinas") {
+  toPhone =
+    process.env.CONSULTOR_CAMPINAS_PHONE;
 
-    } else if (
-      regiaoNormalizada.includes("sorocaba")
-    ) {
-      toPhone =
-        process.env.CONSULTOR_SOROCABA_PHONE;
-    }
+} else if (filial === "sorocaba") {
+  toPhone =
+    process.env.CONSULTOR_SOROCABA_PHONE;
+}
 
     if (!toPhone) {
       return res.status(400).json({
