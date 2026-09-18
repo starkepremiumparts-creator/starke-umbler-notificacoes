@@ -155,8 +155,154 @@ function extrairData(mensagem) {
 
 
 // Localiza o histórico retornado pela Umbler.
+// Verifica se um objeto tem características de uma
+// mensagem da Umbler.
+function pareceMensagem(item) {
+  if (
+    !item ||
+    typeof item !== "object" ||
+    Array.isArray(item)
+  ) {
+    return false;
+  }
+
+  let pontos = 0;
+
+  if (
+    "source" in item ||
+    "Source" in item
+  ) {
+    pontos += 3;
+  }
+
+  if (
+    "content" in item ||
+    "Content" in item
+  ) {
+    pontos += 2;
+  }
+
+  if (
+    "messageType" in item ||
+    "MessageType" in item
+  ) {
+    pontos += 2;
+  }
+
+  if (
+    "eventAtUTC" in item ||
+    "EventAtUTC" in item ||
+    "createdAtUTC" in item ||
+    "CreatedAtUTC" in item
+  ) {
+    pontos += 2;
+  }
+
+  if (
+    "fromContact" in item ||
+    "FromContact" in item ||
+    "sentByOrganizationMember" in item ||
+    "SentByOrganizationMember" in item
+  ) {
+    pontos += 2;
+  }
+
+  if (
+    "chat" in item ||
+    "Chat" in item
+  ) {
+    pontos += 1;
+  }
+
+  return pontos >= 4;
+}
+
+
+// Procura mensagens em QUALQUER array do JSON.
+// Assim funciona mesmo se a Umbler retornar:
+//
+// messages: [...]
+// latestMessages: [...]
+// messages: { items: [...] }
+// qualquerOutroCampo: { items: [...] }
 function encontrarMensagens(chat) {
   if (!chat || typeof chat !== "object") {
+    return [];
+  }
+
+  const candidatos = [];
+
+  function procurar(valor, caminho = "chat") {
+    if (!valor || typeof valor !== "object") {
+      return;
+    }
+
+    if (Array.isArray(valor)) {
+      const mensagensEncontradas =
+        valor.filter(pareceMensagem);
+
+      if (mensagensEncontradas.length > 0) {
+        candidatos.push({
+          caminho,
+          mensagens:
+            mensagensEncontradas,
+        });
+      }
+
+      // Continua procurando dentro do array
+      // caso existam estruturas aninhadas.
+      for (let i = 0; i < valor.length; i++) {
+        procurar(
+          valor[i],
+          `${caminho}[${i}]`
+        );
+      }
+
+      return;
+    }
+
+    for (const [chave, conteudo] of Object.entries(valor)) {
+      procurar(
+        conteudo,
+        `${caminho}.${chave}`
+      );
+    }
+  }
+
+  procurar(chat);
+
+  if (!candidatos.length) {
+    console.log(
+      "Nenhum array de mensagens localizado."
+    );
+
+    console.log(
+      "Campos principais recebidos:",
+      Object.keys(chat)
+    );
+
+    return [];
+  }
+
+  // Se houver mais de um array parecido com mensagens,
+  // escolhe aquele com mais mensagens.
+  candidatos.sort(
+    (a, b) =>
+      b.mensagens.length -
+      a.mensagens.length
+  );
+
+  console.log(
+    "Mensagens encontradas em:",
+    candidatos[0].caminho,
+    "Quantidade:",
+    candidatos[0].mensagens.length
+  );
+
+  return candidatos[0].mensagens;
+}
+
+if (!chat || typeof chat !== "object") {
     return [];
   }
 
@@ -230,13 +376,14 @@ function pegarUltimasMensagensCliente(
         extrairOrigem(mensagem);
 
       const veioDoContato =
-        origem.includes("contact") ||
-        origem.includes("contato") ||
-        Boolean(
-          mensagem?.fromContact?.id ||
-          mensagem?.FromContact?.Id ||
-          mensagem?.FromContact?.id
-        );
+  origem.includes("contact") ||
+  origem.includes("contato") ||
+  origem.includes("customer") ||
+  origem.includes("cliente") ||
+  Boolean(
+    mensagem?.fromContact ||
+    mensagem?.FromContact
+  );
 
       return {
         texto:
