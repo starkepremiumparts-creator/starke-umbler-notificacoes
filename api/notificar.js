@@ -87,18 +87,31 @@ export default async function handler(req, res) {
       ) ||
       "Solicitação não informada";
 
-    const filial =
-  textoValido(body.filial);
+    const referenciaFilial =
+  (
+    textoValido(body.filial) ||
+    textoValido(body.regiao) ||
+    ""
+  )
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
 
-const regiao =
-  filial === "santos"
-    ? "Santos e Região"
-    : filial === "campinas"
-    ? "Campinas e Região"
-    : filial === "sorocaba"
-    ? "Sorocaba e Região"
-    : "Central";
+let filial = null;
+let regiao = "Central";
 
+if (referenciaFilial.includes("santos")) {
+  filial = "santos";
+  regiao = "Santos e Região";
+
+} else if (referenciaFilial.includes("campinas")) {
+  filial = "campinas";
+  regiao = "Campinas e Região";
+
+} else if (referenciaFilial.includes("sorocaba")) {
+  filial = "sorocaba";
+  regiao = "Sorocaba e Região";
+}
     // ==========================================
     // 4. VARIÁVEIS DA VERCEL
     // ==========================================
@@ -143,13 +156,13 @@ if (filial === "santos") {
     process.env.CONSULTOR_SOROCABA_PHONE;
 }
 
-    if (!toPhone) {
-      return res.status(400).json({
-        success: false,
-        error:
-          `Nenhum consultor configurado para ${regiao}`,
-      });
-    }
+if (!toPhone) {
+  return res.status(400).json({
+    success: false,
+    error:
+      `Nenhum consultor configurado. Filial recebida: ${referenciaFilial || "vazia"}`,
+  });
+}
 
     // ==========================================
     // 6. MONTAR A MENSAGEM
