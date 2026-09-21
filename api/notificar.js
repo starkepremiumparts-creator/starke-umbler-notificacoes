@@ -87,33 +87,66 @@ export default async function handler(req, res) {
       ) ||
       "Solicitação não informada";
 
-    const referenciaFilial =
-  (
-    textoValido(body.filial) ||
-    textoValido(body.regiao) ||
-    ""
-  )
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
-
-let filial = null;
-let regiao = "Central";
-
-if (referenciaFilial.includes("santos")) {
-  filial = "santos";
-  regiao = "Santos e Região";
-
-} else if (referenciaFilial.includes("campinas")) {
-  filial = "campinas";
-  regiao = "Campinas e Região";
-
-} else if (referenciaFilial.includes("sorocaba")) {
-  filial = "sorocaba";
-  regiao = "Sorocaba e Região";
-}
     // ==========================================
-    // 4. VARIÁVEIS DA VERCEL
+    // 4. IDENTIFICAR FILIAL
+    // ==========================================
+    //
+    // A prioridade agora é identificar a filial
+    // através da própria URL:
+    //
+    // ?filial=santos
+    // ?filial=campinas
+    // ?filial=sorocaba
+    //
+    // Mantemos body.filial e body.regiao
+    // apenas como fallback.
+    // ==========================================
+
+    const urlRequisicao = new URL(
+      req.url,
+      "https://starke.local"
+    );
+
+    const filialPelaUrl =
+      textoValido(
+        urlRequisicao.searchParams.get("filial")
+      );
+
+    const referenciaFilial =
+      (
+        filialPelaUrl ||
+        textoValido(body.filial) ||
+        textoValido(body.regiao) ||
+        ""
+      )
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase();
+
+    let filial = null;
+    let regiao = "Central";
+
+    if (
+      referenciaFilial.includes("santos")
+    ) {
+      filial = "santos";
+      regiao = "Santos e Região";
+
+    } else if (
+      referenciaFilial.includes("campinas")
+    ) {
+      filial = "campinas";
+      regiao = "Campinas e Região";
+
+    } else if (
+      referenciaFilial.includes("sorocaba")
+    ) {
+      filial = "sorocaba";
+      regiao = "Sorocaba e Região";
+    }
+
+    // ==========================================
+    // 5. VARIÁVEIS DA VERCEL
     // ==========================================
 
     const token =
@@ -138,34 +171,36 @@ if (referenciaFilial.includes("santos")) {
     }
 
     // ==========================================
-    // 5. DESCOBRIR QUAL CONSULTOR RECEBERÁ
+    // 6. DESCOBRIR QUAL CONSULTOR RECEBERÁ
     // ==========================================
 
     let toPhone = null;
 
-if (filial === "santos") {
-  toPhone =
-    process.env.CONSULTOR_SANTOS_PHONE;
+    if (filial === "santos") {
+      toPhone =
+        process.env.CONSULTOR_SANTOS_PHONE;
 
-} else if (filial === "campinas") {
-  toPhone =
-    process.env.CONSULTOR_CAMPINAS_PHONE;
+    } else if (filial === "campinas") {
+      toPhone =
+        process.env.CONSULTOR_CAMPINAS_PHONE;
 
-} else if (filial === "sorocaba") {
-  toPhone =
-    process.env.CONSULTOR_SOROCABA_PHONE;
-}
+    } else if (filial === "sorocaba") {
+      toPhone =
+        process.env.CONSULTOR_SOROCABA_PHONE;
+    }
 
-if (!toPhone) {
-  return res.status(400).json({
-    success: false,
-    error:
-      `Nenhum consultor configurado. Filial recebida: ${referenciaFilial || "vazia"}`,
-  });
-}
+    if (!toPhone) {
+      return res.status(400).json({
+        success: false,
+        error:
+          `Nenhum consultor configurado. Filial recebida: ${
+            referenciaFilial || "vazia"
+          }`,
+      });
+    }
 
     // ==========================================
-    // 6. MONTAR A MENSAGEM
+    // 7. MONTAR A MENSAGEM
     // ==========================================
 
     const mensagemAviso =
@@ -182,7 +217,7 @@ if (!toPhone) {
       `Por favor, entre em contato com o cliente para iniciar o atendimento.`;
 
     // ==========================================
-    // 7. ENVIAR A MENSAGEM PELO UMBLER
+    // 8. ENVIAR A MENSAGEM PELO UMBLER
     // ==========================================
 
     const respostaEnvio =
@@ -221,6 +256,7 @@ if (!toPhone) {
       try {
         resultadoEnvio =
           JSON.parse(respostaTexto);
+
       } catch {
         resultadoEnvio =
           respostaTexto;
@@ -228,7 +264,7 @@ if (!toPhone) {
     }
 
     // ==========================================
-    // 8. TRATAR ERRO DE ENVIO
+    // 9. TRATAR ERRO DE ENVIO
     // ==========================================
 
     if (!respostaEnvio.ok) {
@@ -248,12 +284,13 @@ if (!toPhone) {
     }
 
     // ==========================================
-    // 9. SUCESSO
+    // 10. SUCESSO
     // ==========================================
 
     return res.status(200).json({
       success: true,
       cliente: nome,
+      filial,
       regiao,
       solicitacaoRecebida: true,
     });
