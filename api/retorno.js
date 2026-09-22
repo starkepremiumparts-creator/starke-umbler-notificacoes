@@ -1,23 +1,42 @@
 // ==========================================
 // STÄRKE PARTS
-// RETORNO DOS CONSULTORES VIA WHATSAPP
+// PONTE WHATSAPP CENTRAL ↔ CONSULTORES
 // ==========================================
 //
-// CONSULTOR ENVIA:
+// CONSULTOR → CLIENTE:
 //
-// #5511999999999 Bom dia! Temos a peça disponível.
+// #5511999999999 Bom dia! Temos a peça.
 //
 // CLIENTE RECEBE:
 //
 // *Igor Alves:*
-// Bom dia! Temos a peça disponível.
+// Bom dia! Temos a peça.
+//
+// ------------------------------------------
+//
+// CLIENTE → CONSULTOR:
+//
+// Cliente responde na Central.
+// Sistema verifica a etiqueta do contato.
+// Ex.: etiqueta "Igor"
+//
+// Igor recebe:
+//
+// 🔔 NOVA MENSAGEM DE CLIENTE
+//
+// 👤 Cliente: Wilson Dias
+// 📱 Telefone: +5511999999999
+//
+// 💬 Mensagem:
+// Texto enviado pelo cliente
+//
+// ↩️ Para responder diretamente pela Central:
+//
+// 📋 Copie e responda:
+// #5511999999999
 //
 // ==========================================
 
-
-// ==========================================
-// UTILITÁRIOS
-// ==========================================
 
 function textoValido(valor) {
   if (typeof valor !== "string") {
@@ -32,10 +51,6 @@ function textoValido(valor) {
 }
 
 
-// ==========================================
-// NORMALIZAR TELEFONE
-// ==========================================
-
 function normalizarTelefone(valor) {
   if (!valor) {
     return null;
@@ -45,8 +60,6 @@ function normalizarTelefone(valor) {
     String(valor)
       .replace(/\D/g, "");
 
-  // Caso venha apenas DDD + telefone,
-  // adiciona o código do Brasil.
   if (
     numero.length === 10 ||
     numero.length === 11
@@ -65,14 +78,24 @@ function normalizarTelefone(valor) {
 }
 
 
+function normalizarTextoComparacao(valor) {
+  return String(valor || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+
 // ==========================================
-// CADASTRAR CONSULTOR NO MAP
+// CONSULTOR
 // ==========================================
 
 function cadastrarConsultor(
   consultores,
   nome,
-  telefone
+  telefone,
+  etiqueta = null
 ) {
   const telefoneNormalizado =
     normalizarTelefone(telefone);
@@ -85,31 +108,29 @@ function cadastrarConsultor(
     textoValido(nome) ||
     "Consultor Stärke Parts";
 
-  // Não sobrescreve um cadastro que já exista.
-  if (!consultores.has(telefoneNormalizado)) {
-    consultores.set(
-      telefoneNormalizado,
-      {
-        nome: nomeFinal,
-        telefone: telefoneNormalizado,
-      }
-    );
-  }
+  consultores.set(
+    telefoneNormalizado,
+    {
+      nome: nomeFinal,
+      telefone: telefoneNormalizado,
+      etiqueta:
+        textoValido(etiqueta),
+    }
+  );
 }
 
 
 // ==========================================
-// CONSULTOR → NOME + TELEFONE
+// LER RETORNO_CONSULTORES
 // ==========================================
 //
-// RETORNO_CONSULTORES aceita:
+// Formato:
 //
-// Igor Alves|+5511991636278
-// William Dias|+5511999999999
+// Igor Alves|+5511991636278|Igor
 //
 // Também aceita temporariamente:
 //
-// +5511888888888
+// Igor Alves|+5511991636278
 //
 // ==========================================
 
@@ -122,76 +143,144 @@ function obterConsultoresAutorizados() {
 
   const linhas =
     lista
-      .split(/\r?\n|;|,/)
+      .split(/\r?\n|;/)
       .map((linha) => linha.trim())
       .filter(Boolean);
 
+
   for (const linha of linhas) {
 
-    const separador =
-      linha.indexOf("|");
+    const partes =
+      linha
+        .split("|")
+        .map((parte) => parte.trim());
 
-    // NOVO FORMATO:
-    // Nome|Telefone
-    if (separador !== -1) {
 
-      const nome =
-        linha
-          .slice(0, separador)
-          .trim();
-
-      const telefone =
-        linha
-          .slice(separador + 1)
-          .trim();
+    if (partes.length >= 2) {
 
       cadastrarConsultor(
         consultores,
-        nome,
-        telefone
+        partes[0],
+        partes[1],
+        partes[2] || null
       );
 
       continue;
     }
 
-    // FORMATO ANTIGO:
-    // somente telefone
+
     cadastrarConsultor(
       consultores,
       "Consultor Stärke Parts",
-      linha
+      partes[0],
+      null
     );
   }
 
 
-  // ==========================================
-  // MANTER COMPATIBILIDADE COM AS FILIAIS
-  // ==========================================
+  // Compatibilidade com variáveis antigas.
 
-  cadastrarConsultor(
-    consultores,
-    "Consultor Santos",
+  if (
     process.env.CONSULTOR_SANTOS_PHONE
-  );
+  ) {
+    cadastrarConsultor(
+      consultores,
+      "Consultor Santos",
+      process.env.CONSULTOR_SANTOS_PHONE,
+      null
+    );
+  }
 
-  cadastrarConsultor(
-    consultores,
-    "Consultor Campinas",
+
+  if (
     process.env.CONSULTOR_CAMPINAS_PHONE
-  );
+  ) {
+    cadastrarConsultor(
+      consultores,
+      "Consultor Campinas",
+      process.env.CONSULTOR_CAMPINAS_PHONE,
+      null
+    );
+  }
 
-  cadastrarConsultor(
-    consultores,
-    "Consultor Sorocaba",
+
+  if (
     process.env.CONSULTOR_SOROCABA_PHONE
-  );
+  ) {
+    cadastrarConsultor(
+      consultores,
+      "Consultor Sorocaba",
+      process.env.CONSULTOR_SOROCABA_PHONE,
+      null
+    );
+  }
+
 
   return consultores;
 }
 
 
 // ==========================================
-// ENVIAR MENSAGEM PELO UMBLER
+// LOCALIZAR CONSULTOR PELA ETIQUETA
+// ==========================================
+
+function localizarConsultorPorEtiqueta(
+  consultores,
+  tags
+) {
+  if (!Array.isArray(tags)) {
+    return null;
+  }
+
+
+  const etiquetasContato =
+    tags
+      .map((tag) =>
+        normalizarTextoComparacao(
+          tag?.Name ||
+          tag?.name
+        )
+      )
+      .filter(Boolean);
+
+
+  if (!etiquetasContato.length) {
+    return null;
+  }
+
+
+  for (
+    const consultor
+    of consultores.values()
+  ) {
+
+    if (!consultor.etiqueta) {
+      continue;
+    }
+
+
+    const etiquetaConsultor =
+      normalizarTextoComparacao(
+        consultor.etiqueta
+      );
+
+
+    if (
+      etiquetasContato.includes(
+        etiquetaConsultor
+      )
+    ) {
+      return consultor;
+    }
+  }
+
+
+  return null;
+}
+
+
+// ==========================================
+// ENVIAR VIA UMBLER
 // ==========================================
 
 async function enviarMensagem({
@@ -208,6 +297,7 @@ async function enviarMensagem({
 
   const fromPhone =
     process.env.CENTRAL_PHONE;
+
 
   if (
     !token ||
@@ -283,7 +373,7 @@ async function enviarMensagem({
 
 
 // ==========================================
-// HANDLER PRINCIPAL
+// HANDLER
 // ==========================================
 
 export default async function handler(
@@ -293,15 +383,16 @@ export default async function handler(
 
   try {
 
-    // ==========================================
-    // 1. SEGURANÇA DO WEBHOOK
-    // ==========================================
+    // ========================================
+    // SEGURANÇA
+    // ========================================
 
     const url =
       new URL(
         req.url,
         "https://starke.local"
       );
+
 
     const secretRecebido =
       url.searchParams.get("secret");
@@ -314,17 +405,19 @@ export default async function handler(
       !secretCorreto ||
       secretRecebido !== secretCorreto
     ) {
+
       return res.status(200).json({
         received: true,
         ignored: true,
         reason: "invalid_secret",
       });
+
     }
 
 
-    // ==========================================
-    // 2. TESTE PELO NAVEGADOR
-    // ==========================================
+    // ========================================
+    // TESTE PELO NAVEGADOR
+    // ========================================
 
     if (req.method === "GET") {
 
@@ -337,10 +430,6 @@ export default async function handler(
     }
 
 
-    // ==========================================
-    // 3. SOMENTE POST
-    // ==========================================
-
     if (req.method !== "POST") {
 
       return res.status(200).json({
@@ -351,9 +440,9 @@ export default async function handler(
     }
 
 
-    // ==========================================
-    // 4. RECEBER JSON DO UMBLER
-    // ==========================================
+    // ========================================
+    // RECEBER JSON
+    // ========================================
 
     let body =
       req.body;
@@ -362,8 +451,10 @@ export default async function handler(
     if (typeof body === "string") {
 
       try {
+
         body =
           JSON.parse(body);
+
       } catch {
 
         return res.status(200).json({
@@ -380,9 +471,9 @@ export default async function handler(
       body || {};
 
 
-    // ==========================================
-    // 5. SOMENTE EVENTO MESSAGE
-    // ==========================================
+    // ========================================
+    // SOMENTE MESSAGE
+    // ========================================
 
     const tipoEvento =
       body.Type ||
@@ -403,9 +494,9 @@ export default async function handler(
     }
 
 
-    // ==========================================
-    // 6. ESTRUTURA REAL DO UMBLER
-    // ==========================================
+    // ========================================
+    // PAYLOAD UMBLER
+    // ========================================
 
     const conteudoChat =
       body?.Payload?.Content ||
@@ -425,15 +516,25 @@ export default async function handler(
       {};
 
 
-    // ==========================================
-    // 7. IDENTIFICAR QUEM ENVIOU
-    // ==========================================
-
-    const telefoneRemetente =
+    const telefoneContato =
       normalizarTelefone(
         contato?.PhoneNumber ||
         contato?.phoneNumber
       );
+
+
+    const nomeContato =
+      textoValido(
+        contato?.Name ||
+        contato?.name
+      ) ||
+      "Cliente";
+
+
+    const tags =
+      contato?.Tags ||
+      contato?.tags ||
+      [];
 
 
     const mensagemRecebida =
@@ -453,231 +554,339 @@ export default async function handler(
         .toLowerCase();
 
 
+    const isPrivate =
+      Boolean(
+        ultimaMensagem?.IsPrivate ??
+        ultimaMensagem?.isPrivate
+      );
+
+
     console.log(
-      "RETORNO RECEBIDO:",
+      "EVENTO MESSAGE:",
       {
-        telefoneRemetente,
+        telefoneContato,
+        nomeContato,
         source,
+        isPrivate,
+        tags:
+          Array.isArray(tags)
+            ? tags.map(
+                (tag) =>
+                  tag?.Name ||
+                  tag?.name
+              )
+            : [],
         possuiMensagem:
           Boolean(mensagemRecebida),
       }
     );
 
 
-    // ==========================================
-    // 8. ORIGENS ACEITAS
-    // ==========================================
-    //
-    // Nos testes reais vimos:
-    //
-    // contact
-    // member
-    //
-    // ==========================================
+    // ========================================
+    // IGNORAR NOTAS PRIVADAS
+    // ========================================
 
-    const origemPermitida =
-      source === "contact" ||
-      source === "member";
-
-
-    if (!origemPermitida) {
+    if (isPrivate) {
 
       return res.status(200).json({
         received: true,
         ignored: true,
-        reason: "source_not_allowed",
+        reason:
+          "private_message",
       });
 
     }
 
 
-    // ==========================================
-    // 9. VALIDAR CONSULTOR
-    // ==========================================
+    if (
+      !telefoneContato ||
+      !mensagemRecebida
+    ) {
 
-    const consultoresAutorizados =
+      return res.status(200).json({
+        received: true,
+        ignored: true,
+        reason:
+          "missing_message_data",
+      });
+
+    }
+
+
+    const consultores =
       obterConsultoresAutorizados();
 
 
-    const consultor =
-      telefoneRemetente
-        ? consultoresAutorizados.get(
-            telefoneRemetente
-          )
-        : null;
-
-
-    if (!consultor) {
-
-      return res.status(200).json({
-        received: true,
-        ignored: true,
-        reason:
-          "sender_not_authorized",
-      });
-
-    }
-
-
-    // ==========================================
-    // 10. IGNORAR MENSAGEM VAZIA
-    // ==========================================
-
-    if (!mensagemRecebida) {
-
-      return res.status(200).json({
-        received: true,
-        ignored: true,
-        reason: "empty_message",
-      });
-
-    }
-
-
-    // ==========================================
-    // 11. EVITAR LOOP
-    // ==========================================
-    //
-    // Só comandos iniciados por # serão
-    // processados.
-    //
-    // ==========================================
-
-    if (
-      !mensagemRecebida.startsWith("#")
-    ) {
-
-      return res.status(200).json({
-        received: true,
-        ignored: true,
-        reason:
-          "not_return_command",
-      });
-
-    }
-
-
-    // ==========================================
-    // 12. INTERPRETAR COMANDO
-    // ==========================================
-    //
-    // #5511999999999 mensagem
-    //
-    // ==========================================
-
-    const comando =
-      mensagemRecebida.match(
-        /^#\s*(\+?\d{10,15})\s+([\s\S]+)$/
+    const consultorRemetente =
+      consultores.get(
+        telefoneContato
       );
 
 
-    // ==========================================
-    // 13. FORMATO ERRADO
-    // ==========================================
+    // ========================================
+    // FLUXO 1
+    // CONSULTOR → CLIENTE
+    // ========================================
 
-    if (!comando) {
+    if (
+      consultorRemetente &&
+      mensagemRecebida.startsWith("#")
+    ) {
+
+      const comando =
+        mensagemRecebida.match(
+          /^#\s*(\+?\d{10,15})\s+([\s\S]+)$/
+        );
+
+
+      if (!comando) {
+
+        await enviarMensagem({
+
+          toPhone:
+            telefoneContato,
+
+          contactName:
+            consultorRemetente.nome,
+
+          message:
+            `⚠️ ${consultorRemetente.nome}, formato inválido.\n\n` +
+            `Use:\n\n` +
+            `#TELEFONE mensagem\n\n` +
+            `Exemplo:\n` +
+            `#5511999999999 Bom dia! Temos essa peça disponível.`,
+
+        });
+
+
+        return res.status(200).json({
+          received: true,
+          processed: false,
+          reason:
+            "invalid_command_format",
+        });
+
+      }
+
+
+      const telefoneCliente =
+        normalizarTelefone(
+          comando[1]
+        );
+
+
+      const mensagemCliente =
+        textoValido(
+          comando[2]
+        );
+
+
+      if (
+        !telefoneCliente ||
+        !mensagemCliente
+      ) {
+
+        return res.status(200).json({
+          received: true,
+          processed: false,
+          reason:
+            "invalid_destination",
+        });
+
+      }
+
+
+      const mensagemFinalCliente =
+        `*${consultorRemetente.nome}:*\n` +
+        `${mensagemCliente}`;
+
+
+      const envioCliente =
+        await enviarMensagem({
+
+          toPhone:
+            telefoneCliente,
+
+          message:
+            mensagemFinalCliente,
+
+        });
+
+
+      if (!envioCliente.ok) {
+
+        console.error(
+          "ERRO AO ENVIAR PARA CLIENTE:",
+          {
+            status:
+              envioCliente.status,
+
+            resultado:
+              envioCliente.resultado,
+          }
+        );
+
+
+        return res.status(200).json({
+          received: true,
+          processed: false,
+          reason:
+            "client_send_error",
+        });
+
+      }
+
 
       await enviarMensagem({
 
         toPhone:
-          telefoneRemetente,
+          telefoneContato,
 
         contactName:
-          consultor.nome,
+          consultorRemetente.nome,
 
         message:
-          `⚠️ ${consultor.nome}, formato de resposta inválido.\n\n` +
-
-          `Para responder um cliente pela Central, envie:\n\n` +
-
-          `#TELEFONE mensagem\n\n` +
-
-          `Exemplo:\n` +
-          `#5511999999999 Bom dia! Temos essa peça disponível.`,
+          `✅ Resposta enviada ao cliente pela Central.\n\n` +
+          `👤 Consultor: ${consultorRemetente.nome}\n` +
+          `📱 Cliente: ${telefoneCliente}`,
 
       });
 
 
+      console.log(
+        "CONSULTOR → CLIENTE:",
+        {
+          consultor:
+            consultorRemetente.nome,
+
+          cliente:
+            telefoneCliente,
+        }
+      );
+
+
       return res.status(200).json({
         received: true,
-        processed: false,
-        reason:
-          "invalid_command_format",
+        processed: true,
+        direction:
+          "consultant_to_client",
       });
 
     }
 
 
-    // ==========================================
-    // 14. CLIENTE + MENSAGEM
-    // ==========================================
+    // ========================================
+    // SE É CONSULTOR, MAS NÃO É COMANDO,
+    // IGNORAR.
+    //
+    // Isso impede loop das confirmações
+    // enviadas pela própria Central.
+    // ========================================
 
-    const telefoneCliente =
-      normalizarTelefone(
-        comando[1]
-      );
-
-
-    const mensagemCliente =
-      textoValido(
-        comando[2]
-      );
-
-
-    if (
-      !telefoneCliente ||
-      !mensagemCliente
-    ) {
+    if (consultorRemetente) {
 
       return res.status(200).json({
         received: true,
-        processed: false,
+        ignored: true,
         reason:
-          "invalid_destination",
+          "consultant_non_command",
       });
 
     }
 
 
-    // ==========================================
-    // 15. MONTAR MENSAGEM FINAL DO CLIENTE
-    // ==========================================
+    // ========================================
+    // FLUXO 2
+    // CLIENTE → CONSULTOR
+    // ========================================
+    //
+    // Mensagens que nós mesmos enviamos ao
+    // cliente não devem voltar para o consultor.
+    //
+    // Por isso só encaminhamos quando Source
+    // indica mensagem do contato.
+    // ========================================
 
-    const mensagemFinalCliente =
-      `*${consultor.nome}:*\n` +
-      `${mensagemCliente}`;
+    if (source !== "contact") {
+
+      return res.status(200).json({
+        received: true,
+        ignored: true,
+        reason:
+          "not_incoming_contact_message",
+      });
+
+    }
 
 
-    // ==========================================
-    // 16. ENVIAR PARA O CLIENTE
-    // ==========================================
+    const consultorDestino =
+      localizarConsultorPorEtiqueta(
+        consultores,
+        tags
+      );
 
-    const envioCliente =
+
+    // Cliente sem etiqueta de consultor.
+    if (!consultorDestino) {
+
+      return res.status(200).json({
+        received: true,
+        ignored: true,
+        reason:
+          "no_consultant_tag",
+      });
+
+    }
+
+
+    const numeroParaComando =
+      telefoneContato
+        .replace(/\D/g, "");
+
+
+    const alertaConsultor =
+      `🔔 *NOVA MENSAGEM DE CLIENTE*\n\n` +
+
+      `👤 *Cliente:* ${nomeContato}\n` +
+      `📱 *Telefone:* ${telefoneContato}\n\n` +
+
+      `💬 *Mensagem do cliente:*\n` +
+      `${mensagemRecebida}\n\n` +
+
+      `↩️ *Para responder diretamente pela Central:*\n\n` +
+
+      `📋 *Copie e responda:*\n` +
+      `#${numeroParaComando} `;
+
+
+    const envioConsultor =
       await enviarMensagem({
 
         toPhone:
-          telefoneCliente,
+          consultorDestino.telefone,
+
+        contactName:
+          consultorDestino.nome,
 
         message:
-          mensagemFinalCliente,
+          alertaConsultor,
 
       });
 
 
-    // ==========================================
-    // 17. ERRO NO ENVIO
-    // ==========================================
-
-    if (!envioCliente.ok) {
+    if (!envioConsultor.ok) {
 
       console.error(
-        "ERRO AO ENCAMINHAR PARA CLIENTE:",
+        "ERRO AO NOTIFICAR CONSULTOR:",
         {
+          consultor:
+            consultorDestino.nome,
+
           status:
-            envioCliente.status,
+            envioConsultor.status,
 
           resultado:
-            envioCliente.resultado,
+            envioConsultor.resultado,
         }
       );
 
@@ -686,47 +895,26 @@ export default async function handler(
         received: true,
         processed: false,
         reason:
-          "umbler_send_error",
+          "consultant_notification_error",
       });
 
     }
 
 
-    // ==========================================
-    // 18. CONFIRMAR PARA O CONSULTOR
-    // ==========================================
-
-    await enviarMensagem({
-
-      toPhone:
-        telefoneRemetente,
-
-      contactName:
-        consultor.nome,
-
-      message:
-        `✅ Resposta enviada ao cliente pela Central.\n\n` +
-        `👤 Consultor: ${consultor.nome}\n` +
-        `📱 Cliente: ${telefoneCliente}`,
-
-    });
-
-
-    // ==========================================
-    // 19. SUCESSO
-    // ==========================================
-
     console.log(
-      "RETORNO ENCAMINHADO COM SUCESSO:",
+      "CLIENTE → CONSULTOR:",
       {
-        consultor:
-          consultor.nome,
-
-        telefoneConsultor:
-          telefoneRemetente,
-
         cliente:
-          telefoneCliente,
+          telefoneContato,
+
+        nomeCliente:
+          nomeContato,
+
+        consultor:
+          consultorDestino.nome,
+
+        etiqueta:
+          consultorDestino.etiqueta,
       }
     );
 
@@ -734,9 +922,10 @@ export default async function handler(
     return res.status(200).json({
       received: true,
       processed: true,
-      success: true,
+      direction:
+        "client_to_consultant",
       consultor:
-        consultor.nome,
+        consultorDestino.nome,
     });
 
 
