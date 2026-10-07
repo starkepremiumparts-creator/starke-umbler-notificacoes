@@ -1,35 +1,18 @@
 // ==========================================
 // STÄRKE PARTS
 // PONTE CENTRAL ↔ CONSULTORES
-// TEXTO + MÍDIA
+// TEXTO + MÍDIA COM RETRY AUTOMÁTICO
 // ==========================================
 //
 // RETORNO_CONSULTORES:
 //
 // Nome|WhatsApp|Etiqueta|ChatId
 //
-// Exemplo:
-//
-// Igor Alves|+5511999999999|Igor|CHAT_ID_IGOR
-// Lucas Evangelista|+5511999999999|Lucas E|CHAT_ID_LUCAS
-// Evandro Santos|+5513999999999|Evandro|CHAT_ID_EVANDRO
-//
-// Consultores que ainda não possuem
-// Etiqueta + ChatId também continuam aceitos:
-//
-// Nome|WhatsApp
-//
 // ==========================================
 
 
 // ==========================================
-// ANTI-DUPLICAÇÃO DE MÍDIA
-// ==========================================
-//
-// Ajuda a impedir que a mesma mídia seja
-// encaminhada mais de uma vez dentro da
-// mesma instância da função da Vercel.
-//
+// ANTI-DUPLICAÇÃO LOCAL
 // ==========================================
 
 const midiasProcessadas =
@@ -57,9 +40,13 @@ function textoValido(valor) {
 }
 
 
-// ==========================================
-// NORMALIZAR TELEFONE
-// ==========================================
+function esperar(ms) {
+  return new Promise(
+    (resolve) =>
+      setTimeout(resolve, ms)
+  );
+}
+
 
 function normalizarTelefone(valor) {
   if (!valor) {
@@ -70,11 +57,6 @@ function normalizarTelefone(valor) {
     String(valor)
       .replace(/\D/g, "");
 
-
-  // Se vier somente:
-  // DDD + telefone
-  //
-  // adicionamos o código 55.
   if (
     numero.length === 10 ||
     numero.length === 11
@@ -83,7 +65,6 @@ function normalizarTelefone(valor) {
       "55" + numero;
   }
 
-
   if (
     numero.length < 12 ||
     numero.length > 15
@@ -91,14 +72,9 @@ function normalizarTelefone(valor) {
     return null;
   }
 
-
   return "+" + numero;
 }
 
-
-// ==========================================
-// NORMALIZAR TEXTO PARA COMPARAÇÃO
-// ==========================================
 
 function normalizarTextoComparacao(valor) {
   return String(valor || "")
@@ -113,16 +89,7 @@ function normalizarTextoComparacao(valor) {
 
 
 // ==========================================
-// CADASTRAR CONSULTOR
-// ==========================================
-//
-// IMPORTANTE:
-//
-// Se um telefone já tiver sido cadastrado
-// em RETORNO_CONSULTORES, ele NÃO será
-// sobrescrito pelas variáveis antigas
-// CONSULTOR_SANTOS_PHONE etc.
-//
+// CONSULTOR
 // ==========================================
 
 function cadastrarConsultor(
@@ -132,79 +99,55 @@ function cadastrarConsultor(
   etiqueta = null,
   chatId = null
 ) {
-
   const telefoneNormalizado =
     normalizarTelefone(
       telefone
     );
 
-
   if (!telefoneNormalizado) {
     return;
   }
 
-
-  const nomeFinal =
-    textoValido(nome) ||
-    "Consultor Stärke Parts";
-
-
   if (
-    !consultores.has(
+    consultores.has(
       telefoneNormalizado
     )
   ) {
-
-    consultores.set(
-      telefoneNormalizado,
-      {
-        nome:
-          nomeFinal,
-
-        telefone:
-          telefoneNormalizado,
-
-        etiqueta:
-          textoValido(
-            etiqueta
-          ),
-
-        chatId:
-          textoValido(
-            chatId
-          ),
-      }
-    );
-
+    return;
   }
+
+  consultores.set(
+    telefoneNormalizado,
+    {
+      nome:
+        textoValido(nome) ||
+        "Consultor Stärke Parts",
+
+      telefone:
+        telefoneNormalizado,
+
+      etiqueta:
+        textoValido(etiqueta),
+
+      chatId:
+        textoValido(chatId),
+    }
+  );
 }
 
 
 // ==========================================
 // CARREGAR CONSULTORES
 // ==========================================
-//
-// Aceita:
-//
-// Nome|Telefone|Etiqueta|ChatId
-//
-// ou:
-//
-// Nome|Telefone
-//
-// ==========================================
 
 function obterConsultoresAutorizados() {
-
   const consultores =
     new Map();
-
 
   const lista =
     process.env
       .RETORNO_CONSULTORES ||
     "";
-
 
   const linhas =
     lista
@@ -215,9 +158,7 @@ function obterConsultoresAutorizados() {
       )
       .filter(Boolean);
 
-
   for (const linha of linhas) {
-
     const partes =
       linha
         .split("|")
@@ -226,17 +167,7 @@ function obterConsultoresAutorizados() {
             parte.trim()
         );
 
-
-    // ======================================
-    // Nome|Telefone|Etiqueta|ChatId
-    //
-    // ou
-    //
-    // Nome|Telefone
-    // ======================================
-
     if (partes.length >= 2) {
-
       cadastrarConsultor(
         consultores,
         partes[0],
@@ -248,32 +179,15 @@ function obterConsultoresAutorizados() {
       continue;
     }
 
-
-    // ======================================
-    // Compatibilidade extrema:
-    // somente telefone
-    // ======================================
-
     cadastrarConsultor(
       consultores,
       "Consultor Stärke Parts",
-      partes[0],
-      null,
-      null
+      partes[0]
     );
-
   }
 
 
-  // ========================================
-  // COMPATIBILIDADE COM VARIÁVEIS ANTIGAS
-  // ========================================
-  //
-  // Como cadastrarConsultor NÃO sobrescreve
-  // telefones existentes, RETORNO_CONSULTORES
-  // sempre tem prioridade.
-  //
-  // ========================================
+  // Compatibilidade com variáveis antigas.
 
   cadastrarConsultor(
     consultores,
@@ -282,14 +196,12 @@ function obterConsultoresAutorizados() {
       .CONSULTOR_SANTOS_PHONE
   );
 
-
   cadastrarConsultor(
     consultores,
     "Consultor Campinas",
     process.env
       .CONSULTOR_CAMPINAS_PHONE
   );
-
 
   cadastrarConsultor(
     consultores,
@@ -304,18 +216,16 @@ function obterConsultoresAutorizados() {
 
 
 // ==========================================
-// LOCALIZAR CONSULTOR PELA ETIQUETA
+// CONSULTOR PELA ETIQUETA
 // ==========================================
 
 function localizarConsultorPorEtiqueta(
   consultores,
   tags
 ) {
-
   if (!Array.isArray(tags)) {
     return null;
   }
-
 
   const etiquetasContato =
     tags
@@ -328,10 +238,7 @@ function localizarConsultorPorEtiqueta(
       )
       .filter(Boolean);
 
-
-  if (
-    !etiquetasContato.length
-  ) {
+  if (!etiquetasContato.length) {
     return null;
   }
 
@@ -340,26 +247,21 @@ function localizarConsultorPorEtiqueta(
     const consultor
     of consultores.values()
   ) {
-
     if (!consultor.etiqueta) {
       continue;
     }
-
 
     const etiquetaConsultor =
       normalizarTextoComparacao(
         consultor.etiqueta
       );
 
-
     if (
       etiquetasContato.includes(
         etiquetaConsultor
       )
     ) {
-
       return consultor;
-
     }
   }
 
@@ -369,7 +271,7 @@ function localizarConsultorPorEtiqueta(
 
 
 // ==========================================
-// ENVIAR TEXTO VIA CENTRAL
+// ENVIAR TEXTO
 // ==========================================
 
 async function enviarMensagem({
@@ -377,15 +279,12 @@ async function enviarMensagem({
   message,
   contactName,
 }) {
-
   const token =
     process.env.UMBLER_TOKEN;
-
 
   const organizationId =
     process.env
       .UMBLER_ORGANIZATION_ID;
-
 
   const fromPhone =
     process.env.CENTRAL_PHONE;
@@ -396,11 +295,9 @@ async function enviarMensagem({
     !organizationId ||
     !fromPhone
   ) {
-
     throw new Error(
       "Variáveis da Umbler não configuradas."
     );
-
   }
 
 
@@ -415,10 +312,8 @@ async function enviarMensagem({
 
 
   if (contactName) {
-
     payload.contactName =
       contactName;
-
   }
 
 
@@ -426,8 +321,7 @@ async function enviarMensagem({
     await fetch(
       "https://app-utalk.umbler.com/api/v1/messages/simplified/",
       {
-        method:
-          "POST",
+        method: "POST",
 
         headers: {
           Authorization:
@@ -448,35 +342,25 @@ async function enviarMensagem({
   const respostaTexto =
     await resposta.text();
 
-
   let resultado = null;
 
 
   if (respostaTexto) {
-
     try {
-
       resultado =
         JSON.parse(
           respostaTexto
         );
-
     } catch {
-
       resultado =
         respostaTexto;
-
     }
   }
 
 
   return {
-    ok:
-      resposta.ok,
-
-    status:
-      resposta.status,
-
+    ok: resposta.ok,
+    status: resposta.status,
     resultado,
   };
 }
@@ -485,41 +369,16 @@ async function enviarMensagem({
 // ==========================================
 // CONSULTAR MENSAGEM DA UMBLER
 // ==========================================
-//
-// Usado principalmente para mídia.
-//
-// O webhook pode receber:
-//
-// MessageState: Processing
-//
-// Depois consultamos pelo ID até a mídia
-// estar disponível na API.
-//
-// ==========================================
 
 async function obterMensagemUmbler(
   messageId
 ) {
-
   const token =
     process.env.UMBLER_TOKEN;
-
 
   const organizationId =
     process.env
       .UMBLER_ORGANIZATION_ID;
-
-
-  if (
-    !token ||
-    !organizationId
-  ) {
-
-    throw new Error(
-      "UMBLER_TOKEN ou UMBLER_ORGANIZATION_ID não configurado."
-    );
-
-  }
 
 
   const url =
@@ -537,8 +396,7 @@ async function obterMensagemUmbler(
     await fetch(
       url,
       {
-        method:
-          "GET",
+        method: "GET",
 
         headers: {
           Authorization:
@@ -554,36 +412,229 @@ async function obterMensagemUmbler(
   const respostaTexto =
     await resposta.text();
 
-
   let resultado = null;
 
 
   if (respostaTexto) {
-
     try {
-
       resultado =
         JSON.parse(
           respostaTexto
         );
-
     } catch {
-
       resultado =
         respostaTexto;
-
     }
   }
 
 
   return {
-    ok:
-      resposta.ok,
-
-    status:
-      resposta.status,
-
+    ok: resposta.ok,
+    status: resposta.status,
     resultado,
+  };
+}
+
+
+// ==========================================
+// EXTRAIR STATUS DA MÍDIA
+// ==========================================
+
+function analisarMidia(
+  mensagem
+) {
+  const mensagemCompleta =
+    mensagem || {};
+
+
+  const estado =
+    String(
+      mensagemCompleta
+        ?.messageState ||
+
+      mensagemCompleta
+        ?.MessageState ||
+
+      ""
+    )
+      .trim()
+      .toLowerCase();
+
+
+  const arquivo =
+    mensagemCompleta?.file ||
+    mensagemCompleta?.File ||
+    null;
+
+
+  const thumbnail =
+    mensagemCompleta?.thumbnail ||
+    mensagemCompleta?.Thumbnail ||
+    null;
+
+
+  const arquivoUrl =
+    arquivo?.url ||
+    arquivo?.Url ||
+    thumbnail?.url ||
+    thumbnail?.Url ||
+    null;
+
+
+  const possuiData =
+    Boolean(
+      arquivo?.data ||
+      arquivo?.Data ||
+      thumbnail?.data ||
+      thumbnail?.Data
+    );
+
+
+  const forwardCount =
+    Number(
+      mensagemCompleta
+        ?.forwardCount ??
+
+      mensagemCompleta
+        ?.ForwardCount ??
+
+      0
+    );
+
+
+  return {
+    estado,
+    arquivo,
+    thumbnail,
+    arquivoUrl,
+    possuiData,
+    forwardCount,
+  };
+}
+
+
+// ==========================================
+// AGUARDAR MÍDIA FICAR PRONTA
+// ==========================================
+//
+// O webhook costuma chegar quando:
+//
+// MessageState = Processing
+//
+// Então consultamos novamente algumas vezes.
+//
+// São 5 tentativas com pequeno intervalo,
+// mantendo a resposta do webhook abaixo do
+// limite de tempo da Umbler.
+//
+// ==========================================
+
+async function aguardarMidiaPronta(
+  messageId
+) {
+  const MAX_TENTATIVAS = 5;
+  const INTERVALO_MS = 650;
+
+  let ultimaConsulta = null;
+
+
+  for (
+    let tentativa = 1;
+    tentativa <= MAX_TENTATIVAS;
+    tentativa++
+  ) {
+
+    if (tentativa > 1) {
+      await esperar(
+        INTERVALO_MS
+      );
+    }
+
+
+    const consulta =
+      await obterMensagemUmbler(
+        messageId
+      );
+
+
+    if (!consulta.ok) {
+      console.error(
+        "ERRO CONSULTA MÍDIA:",
+        {
+          tentativa,
+          messageId,
+          status:
+            consulta.status,
+        }
+      );
+
+      ultimaConsulta =
+        consulta;
+
+      continue;
+    }
+
+
+    const analise =
+      analisarMidia(
+        consulta.resultado
+      );
+
+
+    console.log(
+      "TENTATIVA MÍDIA:",
+      {
+        tentativa,
+        messageId,
+        estado:
+          analise.estado,
+
+        possuiArquivoUrl:
+          Boolean(
+            analise.arquivoUrl
+          ),
+
+        possuiData:
+          analise.possuiData,
+
+        forwardCount:
+          analise.forwardCount,
+      }
+    );
+
+
+    ultimaConsulta = {
+      ...consulta,
+      analise,
+    };
+
+
+    const pronta =
+      analise.estado !==
+        "processing" &&
+      (
+        Boolean(
+          analise.arquivoUrl
+        ) ||
+        analise.possuiData
+      );
+
+
+    if (pronta) {
+      return {
+        pronta: true,
+        consulta,
+        analise,
+        tentativa,
+      };
+    }
+  }
+
+
+  return {
+    pronta: false,
+    consulta:
+      ultimaConsulta,
   };
 }
 
@@ -591,36 +642,17 @@ async function obterMensagemUmbler(
 // ==========================================
 // FORWARD NATIVO DA UMBLER
 // ==========================================
-//
-// Encaminha a mídia original para o chat
-// do consultor.
-//
-// ==========================================
 
 async function encaminharMensagemUmbler(
   messageId,
   chatId
 ) {
-
   const token =
     process.env.UMBLER_TOKEN;
-
 
   const organizationId =
     process.env
       .UMBLER_ORGANIZATION_ID;
-
-
-  if (
-    !token ||
-    !organizationId
-  ) {
-
-    throw new Error(
-      "UMBLER_TOKEN ou UMBLER_ORGANIZATION_ID não configurado."
-    );
-
-  }
 
 
   const url =
@@ -635,8 +667,7 @@ async function encaminharMensagemUmbler(
     await fetch(
       url,
       {
-        method:
-          "POST",
+        method: "POST",
 
         headers: {
           Authorization:
@@ -653,8 +684,7 @@ async function encaminharMensagemUmbler(
           JSON.stringify({
             chatId,
             organizationId,
-            skipReassign:
-              false,
+            skipReassign: false,
           }),
       }
     );
@@ -663,46 +693,35 @@ async function encaminharMensagemUmbler(
   const respostaTexto =
     await resposta.text();
 
-
   let resultado = null;
 
 
   if (respostaTexto) {
-
     try {
-
       resultado =
         JSON.parse(
           respostaTexto
         );
-
     } catch {
-
       resultado =
         respostaTexto;
-
     }
   }
 
 
   return {
-    ok:
-      resposta.ok,
-
-    status:
-      resposta.status,
-
+    ok: resposta.ok,
+    status: resposta.status,
     resultado,
   };
 }
 
 
 // ==========================================
-// DESCRIÇÃO DAS MÍDIAS
+// TIPO DA MÍDIA
 // ==========================================
 
 function descricaoMidia(tipo) {
-
   switch (
     String(tipo || "")
       .trim()
@@ -710,104 +729,65 @@ function descricaoMidia(tipo) {
   ) {
 
     case "audio":
-
       return {
-        emoji:
-          "🎤",
-
-        nome:
-          "Áudio",
+        emoji: "🎤",
+        nome: "Áudio",
       };
 
 
     case "image":
-
       return {
-        emoji:
-          "🖼️",
-
-        nome:
-          "Imagem",
+        emoji: "🖼️",
+        nome: "Imagem",
       };
 
 
     case "video":
-
       return {
-        emoji:
-          "🎥",
-
-        nome:
-          "Vídeo",
+        emoji: "🎥",
+        nome: "Vídeo",
       };
 
 
     case "file":
-
       return {
-        emoji:
-          "📎",
-
-        nome:
-          "Arquivo",
+        emoji: "📎",
+        nome: "Arquivo",
       };
 
 
     case "document":
-
       return {
-        emoji:
-          "📄",
-
-        nome:
-          "Documento",
+        emoji: "📄",
+        nome: "Documento",
       };
 
 
     case "sticker":
-
       return {
-        emoji:
-          "🖼️",
-
-        nome:
-          "Sticker",
+        emoji: "🖼️",
+        nome: "Sticker",
       };
 
 
     default:
-
       return {
-        emoji:
-          "📎",
-
-        nome:
-          "Mídia",
+        emoji: "📎",
+        nome: "Mídia",
       };
   }
 }
 
 
-// ==========================================
-// TIPOS DE MÍDIA SUPORTADOS
-// ==========================================
-
-function tipoMidiaSuportado(
-  tipo
-) {
-
-  const tipos =
-    [
-      "audio",
-      "image",
-      "video",
-      "file",
-      "document",
-      "sticker",
-    ];
-
-
-  return tipos.includes(
+function tipoMidiaSuportado(tipo) {
+  return [
+    "audio",
+    "image",
+    "video",
+    "file",
+    "document",
+    "sticker",
+  ].includes(
     String(tipo || "")
       .trim()
       .toLowerCase()
@@ -816,24 +796,20 @@ function tipoMidiaSuportado(
 
 
 // ==========================================
-// MARCAR MÍDIA COMO PROCESSADA
+// MARCAR MÍDIA PROCESSADA
 // ==========================================
 
 function marcarMidiaProcessada(
   messageId
 ) {
-
   midiasProcessadas.add(
     messageId
   );
 
 
-  // Evita crescimento infinito
-  // da memória da instância.
   if (
     midiasProcessadas.size > 500
   ) {
-
     const primeiro =
       midiasProcessadas
         .values()
@@ -842,11 +818,9 @@ function marcarMidiaProcessada(
 
 
     if (primeiro) {
-
       midiasProcessadas.delete(
         primeiro
       );
-
     }
   }
 }
@@ -864,7 +838,7 @@ export default async function handler(
   try {
 
     // ======================================
-    // 1. SEGURANÇA
+    // SEGURANÇA
     // ======================================
 
     const url =
@@ -881,7 +855,8 @@ export default async function handler(
 
 
     const secretCorreto =
-      process.env.WEBHOOK_SECRET;
+      process.env
+        .WEBHOOK_SECRET;
 
 
     if (
@@ -889,64 +864,48 @@ export default async function handler(
       secretRecebido !==
         secretCorreto
     ) {
-
-      return res.status(200).json({
-        received:
-          true,
-
-        ignored:
-          true,
-
-        reason:
-          "invalid_secret",
-      });
-
+      return res
+        .status(200)
+        .json({
+          received: true,
+          ignored: true,
+          reason:
+            "invalid_secret",
+        });
     }
 
 
     // ======================================
-    // 2. TESTE PELO NAVEGADOR
+    // TESTE GET
     // ======================================
 
     if (
       req.method === "GET"
     ) {
-
-      return res.status(200).json({
-        received:
-          true,
-
-        route:
-          "retorno",
-
-        status:
-          "online",
-      });
-
+      return res
+        .status(200)
+        .json({
+          received: true,
+          route: "retorno",
+          status: "online",
+        });
     }
 
-
-    // ======================================
-    // 3. SOMENTE POST
-    // ======================================
 
     if (
       req.method !== "POST"
     ) {
-
-      return res.status(200).json({
-        received:
-          true,
-
-        ignored:
-          true,
-      });
-
+      return res
+        .status(200)
+        .json({
+          received: true,
+          ignored: true,
+        });
     }
 
 
     // ======================================
-    // 4. LER BODY
+    // BODY
     // ======================================
 
     let body =
@@ -956,27 +915,18 @@ export default async function handler(
     if (
       typeof body === "string"
     ) {
-
       try {
-
         body =
-          JSON.parse(
-            body
-          );
-
+          JSON.parse(body);
       } catch {
-
-        return res.status(200).json({
-          received:
-            true,
-
-          ignored:
-            true,
-
-          reason:
-            "invalid_json",
-        });
-
+        return res
+          .status(200)
+          .json({
+            received: true,
+            ignored: true,
+            reason:
+              "invalid_json",
+          });
       }
     }
 
@@ -986,7 +936,7 @@ export default async function handler(
 
 
     // ======================================
-    // 5. SOMENTE EVENTO MESSAGE
+    // EVENTO MESSAGE
     // ======================================
 
     const tipoEvento =
@@ -999,23 +949,19 @@ export default async function handler(
         .toLowerCase() !==
       "message"
     ) {
-
-      return res.status(200).json({
-        received:
-          true,
-
-        ignored:
-          true,
-
-        reason:
-          "not_message_event",
-      });
-
+      return res
+        .status(200)
+        .json({
+          received: true,
+          ignored: true,
+          reason:
+            "not_message_event",
+        });
     }
 
 
     // ======================================
-    // 6. PAYLOAD REAL DA UMBLER
+    // PAYLOAD UMBLER
     // ======================================
 
     const conteudoChat =
@@ -1031,14 +977,12 @@ export default async function handler(
 
 
     const ultimaMensagem =
-      conteudoChat?.LastMessage ||
-      conteudoChat?.lastMessage ||
+      conteudoChat
+        ?.LastMessage ||
+      conteudoChat
+        ?.lastMessage ||
       {};
 
-
-    // ======================================
-    // 7. DADOS DO CONTATO
-    // ======================================
 
     const telefoneContato =
       normalizarTelefone(
@@ -1061,21 +1005,24 @@ export default async function handler(
       [];
 
 
-    // ======================================
-    // 8. DADOS DA MENSAGEM
-    // ======================================
-
     const mensagemRecebida =
       textoValido(
-        ultimaMensagem?.Content ||
-        ultimaMensagem?.content
+        ultimaMensagem
+          ?.Content ||
+
+        ultimaMensagem
+          ?.content
       );
 
 
     const source =
       String(
-        ultimaMensagem?.Source ||
-        ultimaMensagem?.source ||
+        ultimaMensagem
+          ?.Source ||
+
+        ultimaMensagem
+          ?.source ||
+
         ""
       )
         .trim()
@@ -1084,8 +1031,12 @@ export default async function handler(
 
     const messageType =
       String(
-        ultimaMensagem?.MessageType ||
-        ultimaMensagem?.messageType ||
+        ultimaMensagem
+          ?.MessageType ||
+
+        ultimaMensagem
+          ?.messageType ||
+
         "Text"
       )
         .trim()
@@ -1101,8 +1052,12 @@ export default async function handler(
 
     const messageState =
       String(
-        ultimaMensagem?.MessageState ||
-        ultimaMensagem?.messageState ||
+        ultimaMensagem
+          ?.MessageState ||
+
+        ultimaMensagem
+          ?.messageState ||
+
         ""
       )
         .trim()
@@ -1111,8 +1066,11 @@ export default async function handler(
 
     const isPrivate =
       Boolean(
-        ultimaMensagem?.IsPrivate ??
-        ultimaMensagem?.isPrivate
+        ultimaMensagem
+          ?.IsPrivate ??
+
+        ultimaMensagem
+          ?.isPrivate
       );
 
 
@@ -1147,47 +1105,35 @@ export default async function handler(
 
 
     // ======================================
-    // 9. IGNORAR NOTAS PRIVADAS
+    // IGNORAR PRIVADAS
     // ======================================
 
     if (isPrivate) {
-
-      return res.status(200).json({
-        received:
-          true,
-
-        ignored:
-          true,
-
-        reason:
-          "private_message",
-      });
-
+      return res
+        .status(200)
+        .json({
+          received: true,
+          ignored: true,
+          reason:
+            "private_message",
+        });
     }
 
-
-    // ======================================
-    // 10. PRECISA TER TELEFONE
-    // ======================================
 
     if (!telefoneContato) {
-
-      return res.status(200).json({
-        received:
-          true,
-
-        ignored:
-          true,
-
-        reason:
-          "missing_phone",
-      });
-
+      return res
+        .status(200)
+        .json({
+          received: true,
+          ignored: true,
+          reason:
+            "missing_phone",
+        });
     }
 
 
     // ======================================
-    // 11. CARREGAR CONSULTORES
+    // CONSULTORES
     // ======================================
 
     const consultores =
@@ -1201,18 +1147,10 @@ export default async function handler(
 
 
     // ======================================
-    // FLUXO 1
-    //
     // CONSULTOR → CLIENTE
-    // TEXTO
     // ======================================
 
     if (consultorRemetente) {
-
-      // ====================================
-      // Consultor só gera ação quando envia
-      // comando começando com #
-      // ====================================
 
       if (
         messageType !== "text" ||
@@ -1220,26 +1158,16 @@ export default async function handler(
         !mensagemRecebida
           .startsWith("#")
       ) {
-
-        return res.status(200).json({
-          received:
-            true,
-
-          ignored:
-            true,
-
-          reason:
-            "consultant_non_command",
-        });
-
+        return res
+          .status(200)
+          .json({
+            received: true,
+            ignored: true,
+            reason:
+              "consultant_non_command",
+          });
       }
 
-
-      // ====================================
-      // FORMATO:
-      //
-      // #5511999999999 mensagem
-      // ====================================
 
       const comando =
         mensagemRecebida.match(
@@ -1254,32 +1182,26 @@ export default async function handler(
             telefoneContato,
 
           contactName:
-            consultorRemetente.nome,
+            consultorRemetente
+              .nome,
 
           message:
             `⚠️ ${consultorRemetente.nome}, formato inválido.\n\n` +
-
             `Use:\n\n` +
-
             `#TELEFONE mensagem\n\n` +
-
             `Exemplo:\n` +
-
             `#5511999999999 Bom dia! Temos essa peça disponível.`,
         });
 
 
-        return res.status(200).json({
-          received:
-            true,
-
-          processed:
-            false,
-
-          reason:
-            "invalid_command_format",
-        });
-
+        return res
+          .status(200)
+          .json({
+            received: true,
+            processed: false,
+            reason:
+              "invalid_command_format",
+          });
       }
 
 
@@ -1299,28 +1221,20 @@ export default async function handler(
         !telefoneCliente ||
         !mensagemCliente
       ) {
-
-        return res.status(200).json({
-          received:
-            true,
-
-          processed:
-            false,
-
-          reason:
-            "invalid_destination",
-        });
-
+        return res
+          .status(200)
+          .json({
+            received: true,
+            processed: false,
+            reason:
+              "invalid_destination",
+          });
       }
 
 
-      // ====================================
-      // MENSAGEM FINAL AO CLIENTE
-      // ====================================
-
       const mensagemFinalCliente =
         `*${consultorRemetente.nome}:*\n` +
-        mensagemCliente;
+        `${mensagemCliente}`;
 
 
       const envioCliente =
@@ -1334,108 +1248,66 @@ export default async function handler(
 
 
       if (!envioCliente.ok) {
-
         console.error(
           "ERRO CONSULTOR → CLIENTE:",
           envioCliente
         );
 
 
-        return res.status(200).json({
-          received:
-            true,
-
-          processed:
-            false,
-
-          reason:
-            "client_send_error",
-        });
-
+        return res
+          .status(200)
+          .json({
+            received: true,
+            processed: false,
+            reason:
+              "client_send_error",
+          });
       }
 
-
-      // ====================================
-      // CONFIRMAÇÃO PARA CONSULTOR
-      // ====================================
 
       await enviarMensagem({
         toPhone:
           telefoneContato,
 
         contactName:
-          consultorRemetente.nome,
+          consultorRemetente
+            .nome,
 
         message:
           `✅ Resposta enviada ao cliente pela Central.\n\n` +
-
           `👤 Consultor: ${consultorRemetente.nome}\n` +
-
           `📱 Cliente: ${telefoneCliente}`,
       });
 
 
-      console.log(
-        "CONSULTOR → CLIENTE:",
-        {
-          consultor:
-            consultorRemetente.nome,
-
-          telefoneConsultor:
-            telefoneContato,
-
-          cliente:
-            telefoneCliente,
-        }
-      );
-
-
-      return res.status(200).json({
-        received:
-          true,
-
-        processed:
-          true,
-
-        direction:
-          "consultant_to_client",
-      });
-
+      return res
+        .status(200)
+        .json({
+          received: true,
+          processed: true,
+          direction:
+            "consultant_to_client",
+        });
     }
 
 
     // ======================================
-    // DAQUI PARA BAIXO:
-    //
-    // CLIENTE → CONSULTOR
-    // ======================================
-
-
-    // ======================================
-    // 12. SÓ MENSAGEM DO CONTATO
+    // SOMENTE CLIENTE → CONSULTOR
     // ======================================
 
     if (
       source !== "contact"
     ) {
-
-      return res.status(200).json({
-        received:
-          true,
-
-        ignored:
-          true,
-
-        reason:
-          "not_contact_message",
-      });
-
+      return res
+        .status(200)
+        .json({
+          received: true,
+          ignored: true,
+          reason:
+            "not_contact_message",
+        });
     }
 
-
-    // ======================================
-    // 13. DESCOBRIR CONSULTOR PELA ETIQUETA
-    // ======================================
 
     const consultorDestino =
       localizarConsultorPorEtiqueta(
@@ -1445,32 +1317,23 @@ export default async function handler(
 
 
     if (!consultorDestino) {
-
-      return res.status(200).json({
-        received:
-          true,
-
-        ignored:
-          true,
-
-        reason:
-          "no_consultant_tag",
-      });
-
+      return res
+        .status(200)
+        .json({
+          received: true,
+          ignored: true,
+          reason:
+            "no_consultant_tag",
+        });
     }
 
 
     const numeroComando =
       telefoneContato
-        .replace(
-          /\D/g,
-          ""
-        );
+        .replace(/\D/g, "");
 
 
     // ======================================
-    // FLUXO 2
-    //
     // CLIENTE → CONSULTOR
     // TEXTO
     // ======================================
@@ -1480,18 +1343,14 @@ export default async function handler(
     ) {
 
       if (!mensagemRecebida) {
-
-        return res.status(200).json({
-          received:
-            true,
-
-          ignored:
-            true,
-
-          reason:
-            "empty_text",
-        });
-
+        return res
+          .status(200)
+          .json({
+            received: true,
+            ignored: true,
+            reason:
+              "empty_text",
+          });
       }
 
 
@@ -1499,94 +1358,48 @@ export default async function handler(
         `🔔 *NOVA MENSAGEM DE CLIENTE*\n\n` +
 
         `👤 *Cliente:* ${nomeContato}\n` +
-
         `📱 *Telefone:* ${telefoneContato}\n\n` +
 
         `💬 *Mensagem do cliente:*\n` +
-
         `${mensagemRecebida}\n\n` +
 
         `↩️ *Para responder diretamente pela Central:*\n\n` +
 
         `📋 *Copie e responda:*\n` +
-
         `#${numeroComando} `;
 
 
       const envio =
         await enviarMensagem({
           toPhone:
-            consultorDestino.telefone,
+            consultorDestino
+              .telefone,
 
           contactName:
-            consultorDestino.nome,
+            consultorDestino
+              .nome,
 
           message:
             alerta,
         });
 
 
-      if (!envio.ok) {
-
-        console.error(
-          "ERRO CLIENTE → CONSULTOR (TEXTO):",
-          envio
-        );
-
-
-        return res.status(200).json({
-          received:
-            true,
-
+      return res
+        .status(200)
+        .json({
+          received: true,
           processed:
-            false,
+            envio.ok,
 
-          reason:
-            "consultant_notification_error",
+          direction:
+            "client_to_consultant_text",
         });
-
-      }
-
-
-      console.log(
-        "CLIENTE → CONSULTOR (TEXTO):",
-        {
-          cliente:
-            telefoneContato,
-
-          consultor:
-            consultorDestino.nome,
-
-          etiqueta:
-            consultorDestino.etiqueta,
-        }
-      );
-
-
-      return res.status(200).json({
-        received:
-          true,
-
-        processed:
-          true,
-
-        direction:
-          "client_to_consultant_text",
-      });
-
     }
 
 
     // ======================================
-    // FLUXO 3
-    //
     // CLIENTE → CONSULTOR
     // MÍDIA
-    // ======================================
-
-
-    // ======================================
-    // 14. VALIDAR TIPO
     // ======================================
 
     if (
@@ -1594,220 +1407,135 @@ export default async function handler(
         messageType
       )
     ) {
-
-      return res.status(200).json({
-        received:
-          true,
-
-        ignored:
-          true,
-
-        reason:
-          "unsupported_message_type",
-
-        messageType,
-      });
-
+      return res
+        .status(200)
+        .json({
+          received: true,
+          ignored: true,
+          reason:
+            "unsupported_message_type",
+          messageType,
+        });
     }
 
-
-    // ======================================
-    // 15. PRECISA TER MESSAGE ID
-    // ======================================
 
     if (!messageId) {
-
-      return res.status(200).json({
-        received:
-          true,
-
-        ignored:
-          true,
-
-        reason:
-          "missing_message_id",
-      });
-
+      return res
+        .status(200)
+        .json({
+          received: true,
+          ignored: true,
+          reason:
+            "missing_message_id",
+        });
     }
 
-
-    // ======================================
-    // 16. CONSULTOR PRECISA TER CHAT ID
-    // ======================================
 
     if (
       !consultorDestino.chatId
     ) {
-
       console.error(
         "CONSULTOR SEM CHAT ID:",
-        {
-          consultor:
-            consultorDestino.nome,
-
-          etiqueta:
-            consultorDestino.etiqueta,
-        }
+        consultorDestino.nome
       );
 
 
-      return res.status(200).json({
-        received:
-          true,
-
-        processed:
-          false,
-
-        reason:
-          "consultant_chat_id_missing",
-      });
-
+      return res
+        .status(200)
+        .json({
+          received: true,
+          processed: false,
+          reason:
+            "consultant_chat_id_missing",
+        });
     }
 
-
-    // ======================================
-    // 17. ANTI-DUPLICAÇÃO
-    // ======================================
 
     if (
       midiasProcessadas.has(
         messageId
       )
     ) {
-
-      return res.status(200).json({
-        received:
-          true,
-
-        ignored:
-          true,
-
-        reason:
-          "media_already_processed_local",
-      });
-
+      return res
+        .status(200)
+        .json({
+          received: true,
+          ignored: true,
+          reason:
+            "media_already_processed_local",
+        });
     }
 
 
     // ======================================
-    // 18. CONSULTAR MENSAGEM COMPLETA
+    // NOVO:
+    // AGUARDAR PROCESSAMENTO DA UMBLER
     // ======================================
 
-    const consulta =
-      await obterMensagemUmbler(
+    const resultadoMidia =
+      await aguardarMidiaPronta(
         messageId
       );
 
 
-    if (!consulta.ok) {
+    if (
+      !resultadoMidia.pronta
+    ) {
 
       console.error(
-        "ERRO AO CONSULTAR MÍDIA:",
-        consulta
+        "MÍDIA NÃO FICOU PRONTA:",
+        {
+          messageId,
+          consultor:
+            consultorDestino.nome,
+        }
       );
 
 
-      return res.status(200).json({
-        received:
-          true,
-
-        processed:
-          false,
-
-        reason:
-          "message_lookup_error",
-      });
-
+      return res
+        .status(200)
+        .json({
+          received: true,
+          processed: false,
+          reason:
+            "media_still_processing",
+        });
     }
 
 
     const mensagemCompleta =
-      consulta.resultado ||
-      {};
+      resultadoMidia
+        .consulta
+        .resultado;
 
 
-    const estado =
-      String(
-        mensagemCompleta
-          ?.messageState ||
-
-        mensagemCompleta
-          ?.MessageState ||
-
-        messageState ||
-
-        ""
-      )
-        .trim()
-        .toLowerCase();
-
-
-    const arquivo =
-      mensagemCompleta?.file ||
-      mensagemCompleta?.File ||
-      null;
-
-
-    const thumbnail =
-      mensagemCompleta?.thumbnail ||
-      mensagemCompleta?.Thumbnail ||
-      null;
-
-
-    const arquivoUrl =
-      arquivo?.url ||
-      arquivo?.Url ||
-      thumbnail?.url ||
-      thumbnail?.Url ||
-      null;
-
-
-    console.log(
-      "MÍDIA CONSULTADA:",
-      {
-        messageId,
-        estado,
-
-        possuiArquivoUrl:
-          Boolean(
-            arquivoUrl
-          ),
-
-        tipo:
-          messageType,
-
-        consultor:
-          consultorDestino.nome,
-      }
-    );
+    const analise =
+      resultadoMidia
+        .analise;
 
 
     // ======================================
-    // 19. AINDA PROCESSANDO
+    // SE JÁ FOI ENCAMINHADA
     // ======================================
 
     if (
-      estado === "processing" ||
-      !arquivoUrl
+      analise.forwardCount > 0
     ) {
+      marcarMidiaProcessada(
+        messageId
+      );
 
-      return res.status(200).json({
-        received:
-          true,
 
-        processed:
-          false,
-
-        reason:
-          "media_processing",
-      });
-
+      return res
+        .status(200)
+        .json({
+          received: true,
+          ignored: true,
+          reason:
+            "media_already_forwarded",
+        });
     }
 
-
-    // ======================================
-    // 20. IDENTIFICAR MÍDIA
-    // ======================================
 
     const tipoMidia =
       descricaoMidia(
@@ -1816,15 +1544,27 @@ export default async function handler(
 
 
     const nomeArquivo =
-      arquivo?.originalName ||
-      arquivo?.OriginalName ||
-      thumbnail?.originalName ||
-      thumbnail?.OriginalName ||
+      analise
+        ?.arquivo
+        ?.originalName ||
+
+      analise
+        ?.arquivo
+        ?.OriginalName ||
+
+      analise
+        ?.thumbnail
+        ?.originalName ||
+
+      analise
+        ?.thumbnail
+        ?.OriginalName ||
+
       null;
 
 
     // ======================================
-    // 21. CABEÇALHO
+    // CABEÇALHO
     // ======================================
 
     let cabecalho =
@@ -1837,7 +1577,6 @@ export default async function handler(
       `${tipoMidia.emoji} *${tipoMidia.nome} recebido do cliente:*`;
 
 
-    // Documento / PDF
     if (
       nomeArquivo &&
       (
@@ -1845,23 +1584,18 @@ export default async function handler(
         messageType === "document"
       )
     ) {
-
       cabecalho +=
         `\n📄 *Arquivo:* ${nomeArquivo}`;
-
     }
 
 
-    // Foto com legenda
     if (
       mensagemRecebida &&
       messageType === "image"
     ) {
-
       cabecalho +=
         `\n\n📝 *Legenda:*\n` +
-        `${mensagemRecebida}`;
-
+        mensagemRecebida;
     }
 
 
@@ -1879,29 +1613,19 @@ export default async function handler(
 
 
     if (!envioCabecalho.ok) {
-
-      console.error(
-        "ERRO NO CABEÇALHO DA MÍDIA:",
-        envioCabecalho
-      );
-
-
-      return res.status(200).json({
-        received:
-          true,
-
-        processed:
-          false,
-
-        reason:
-          "media_header_error",
-      });
-
+      return res
+        .status(200)
+        .json({
+          received: true,
+          processed: false,
+          reason:
+            "media_header_error",
+        });
     }
 
 
     // ======================================
-    // 22. ENCAMINHAR MÍDIA ORIGINAL
+    // FORWARD DA MÍDIA ORIGINAL
     // ======================================
 
     const forward =
@@ -1912,7 +1636,6 @@ export default async function handler(
 
 
     if (!forward.ok) {
-
       console.error(
         "ERRO NO FORWARD:",
         {
@@ -1930,23 +1653,16 @@ export default async function handler(
       );
 
 
-      return res.status(200).json({
-        received:
-          true,
-
-        processed:
-          false,
-
-        reason:
-          "media_forward_error",
-      });
-
+      return res
+        .status(200)
+        .json({
+          received: true,
+          processed: false,
+          reason:
+            "media_forward_error",
+        });
     }
 
-
-    // ======================================
-    // 23. MARCAR COMO PROCESSADA
-    // ======================================
 
     marcarMidiaProcessada(
       messageId
@@ -1954,7 +1670,7 @@ export default async function handler(
 
 
     // ======================================
-    // 24. COMANDO PRONTO PARA RESPOSTA
+    // COMANDO PARA RESPOSTA
     // ======================================
 
     await enviarMensagem({
@@ -1974,7 +1690,7 @@ export default async function handler(
 
 
     console.log(
-      "MÍDIA CLIENTE → CONSULTOR:",
+      "✅ MÍDIA CLIENTE → CONSULTOR:",
       {
         messageId,
 
@@ -1984,34 +1700,28 @@ export default async function handler(
         consultor:
           consultorDestino.nome,
 
-        etiqueta:
-          consultorDestino.etiqueta,
-
-        chatId:
-          consultorDestino.chatId,
-
         tipo:
           messageType,
+
+        tentativa:
+          resultadoMidia
+            .tentativa,
       }
     );
 
 
-    return res.status(200).json({
-      received:
-        true,
-
-      processed:
-        true,
-
-      direction:
-        "client_to_consultant_media",
-
-      mediaType:
-        messageType,
-
-      consultor:
-        consultorDestino.nome,
-    });
+    return res
+      .status(200)
+      .json({
+        received: true,
+        processed: true,
+        direction:
+          "client_to_consultant_media",
+        mediaType:
+          messageType,
+        consultor:
+          consultorDestino.nome,
+      });
 
 
   } catch (error) {
@@ -2022,16 +1732,12 @@ export default async function handler(
     );
 
 
-    return res.status(200).json({
-      received:
-        true,
-
-      processed:
-        false,
-
-      error:
-        true,
-    });
-
+    return res
+      .status(200)
+      .json({
+        received: true,
+        processed: false,
+        error: true,
+      });
   }
 }
