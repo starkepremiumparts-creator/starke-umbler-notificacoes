@@ -31,8 +31,7 @@ function textoValido(valor) {
 
 function esperar(ms) {
   return new Promise(
-    (resolve) =>
-      setTimeout(resolve, ms)
+    (resolve) => setTimeout(resolve, ms)
   );
 }
 
@@ -50,8 +49,7 @@ function normalizarTelefone(valor) {
     numero.length === 10 ||
     numero.length === 11
   ) {
-    numero =
-      "55" + numero;
+    numero = "55" + numero;
   }
 
   if (
@@ -78,7 +76,7 @@ function normalizarTextoComparacao(valor) {
 
 
 // ==========================================
-// CADASTRAR CONSULTOR
+// CONSULTOR
 // ==========================================
 
 function cadastrarConsultor(
@@ -89,9 +87,7 @@ function cadastrarConsultor(
   chatId = null
 ) {
   const telefoneNormalizado =
-    normalizarTelefone(
-      telefone
-    );
+    normalizarTelefone(telefone);
 
   if (!telefoneNormalizado) {
     return;
@@ -125,27 +121,12 @@ function cadastrarConsultor(
 }
 
 
-// ==========================================
-// CARREGAR CONSULTORES
-// ==========================================
-//
-// Formato:
-//
-// Nome|WhatsApp|Etiqueta|ChatId
-//
-// Também aceita:
-//
-// Nome|WhatsApp
-//
-// ==========================================
-
 function obterConsultoresAutorizados() {
   const consultores =
     new Map();
 
   const lista =
-    process.env
-      .RETORNO_CONSULTORES ||
+    process.env.RETORNO_CONSULTORES ||
     "";
 
   const linhas =
@@ -189,7 +170,7 @@ function obterConsultoresAutorizados() {
 
 
   // Compatibilidade com variáveis antigas.
-
+  // RETORNO_CONSULTORES tem prioridade.
   cadastrarConsultor(
     consultores,
     "Consultor Santos",
@@ -216,10 +197,6 @@ function obterConsultoresAutorizados() {
 }
 
 
-// ==========================================
-// LOCALIZAR CONSULTOR PELA ETIQUETA
-// ==========================================
-
 function localizarConsultorPorEtiqueta(
   consultores,
   tags
@@ -227,7 +204,6 @@ function localizarConsultorPorEtiqueta(
   if (!Array.isArray(tags)) {
     return null;
   }
-
 
   const etiquetasContato =
     tags
@@ -240,7 +216,6 @@ function localizarConsultorPorEtiqueta(
       )
       .filter(Boolean);
 
-
   for (
     const consultor
     of consultores.values()
@@ -250,12 +225,10 @@ function localizarConsultorPorEtiqueta(
       continue;
     }
 
-
     const etiquetaConsultor =
       normalizarTextoComparacao(
         consultor.etiqueta
       );
-
 
     if (
       etiquetasContato.includes(
@@ -266,13 +239,22 @@ function localizarConsultorPorEtiqueta(
     }
   }
 
-
   return null;
 }
 
 
 // ==========================================
-// EXTRAIR TELEFONE DE UMA MENSAGEM
+// EXTRAIR TELEFONE DO TEXTO
+// ==========================================
+//
+// ENTENDE:
+//
+// #5511984984178
+//
+// E:
+//
+// 📱 *Telefone:* +5511984984178
+//
 // ==========================================
 
 function extrairTelefoneDoTexto(
@@ -287,10 +269,28 @@ function extrairTelefoneDoTexto(
     }
 
 
-    // Exemplo:
+    // Remove formatações do WhatsApp:
+    // *, _, ~ e `
+    //
+    // *Telefone:* vira Telefone:
+    const textoLimpo =
+      valor
+        .replace(
+          /[*_~`]/g,
+          ""
+        )
+        .replace(
+          /[\u200B-\u200D\uFEFF]/g,
+          ""
+        );
+
+
+    // ======================================
     // #5511984984178
+    // ======================================
+
     const porComando =
-      valor.match(
+      textoLimpo.match(
         /#\s*(\+?\d{10,15})/
       );
 
@@ -302,16 +302,19 @@ function extrairTelefoneDoTexto(
           porComando[1]
         );
 
+
       if (telefone) {
         return telefone;
       }
     }
 
 
-    // Compatibilidade:
+    // ======================================
     // Telefone: +5511984984178
+    // ======================================
+
     const porRotulo =
-      valor.match(
+      textoLimpo.match(
         /telefone\s*:\s*(\+?\d{10,15})/i
       );
 
@@ -322,6 +325,7 @@ function extrairTelefoneDoTexto(
         normalizarTelefone(
           porRotulo[1]
         );
+
 
       if (telefone) {
         return telefone;
@@ -347,9 +351,11 @@ async function enviarMensagem({
   const token =
     process.env.UMBLER_TOKEN;
 
+
   const organizationId =
     process.env
       .UMBLER_ORGANIZATION_ID;
+
 
   const fromPhone =
     process.env.CENTRAL_PHONE;
@@ -360,9 +366,11 @@ async function enviarMensagem({
     !organizationId ||
     !fromPhone
   ) {
+
     throw new Error(
       "Variáveis da Umbler não configuradas."
     );
+
   }
 
 
@@ -443,7 +451,7 @@ async function enviarMensagem({
 
 
 // ==========================================
-// CONSULTAR UMA MENSAGEM DA UMBLER
+// CONSULTAR MENSAGEM DA UMBLER
 // ==========================================
 
 async function obterMensagemUmbler(
@@ -452,6 +460,7 @@ async function obterMensagemUmbler(
 
   const token =
     process.env.UMBLER_TOKEN;
+
 
   const organizationId =
     process.env
@@ -462,9 +471,11 @@ async function obterMensagemUmbler(
     !token ||
     !organizationId
   ) {
+
     throw new Error(
       "UMBLER_TOKEN ou UMBLER_ORGANIZATION_ID não configurado."
     );
+
   }
 
 
@@ -608,16 +619,12 @@ function analisarMidia(
   const contentType =
     arquivo?.contentType ||
     arquivo?.ContentType ||
-    thumbnail?.contentType ||
-    thumbnail?.ContentType ||
     null;
 
 
   const originalName =
     arquivo?.originalName ||
     arquivo?.OriginalName ||
-    thumbnail?.originalName ||
-    thumbnail?.OriginalName ||
     null;
 
 
@@ -638,13 +645,21 @@ function analisarMidia(
 // ==========================================
 // AGUARDAR MÍDIA FICAR DISPONÍVEL
 // ==========================================
+//
+// A Umbler pode continuar retornando
+// MessageState = Processing mesmo depois
+// de file.url já existir.
+//
+// Portanto, a URL do arquivo é suficiente.
+//
+// ==========================================
 
 async function aguardarMidiaPronta(
   messageId
 ) {
 
   const MAX_TENTATIVAS =
-    5;
+    6;
 
   const INTERVALO_MS =
     500;
@@ -686,6 +701,7 @@ async function aguardarMidiaPronta(
         {
           tentativa,
           messageId,
+
           status:
             consulta.status,
         }
@@ -736,20 +752,9 @@ async function aguardarMidiaPronta(
     };
 
 
-    // IMPORTANTE:
-    //
-    // A Umbler pode continuar com
-    // MessageState = Processing mesmo
-    // depois de disponibilizar a URL.
-    //
-    // Então a existência do arquivo
-    // já é suficiente.
     const pronta =
       Boolean(
         analise.arquivoUrl
-      ) ||
-      Boolean(
-        analise.thumbnailUrl
       ) ||
       analise.possuiData;
 
@@ -794,6 +799,7 @@ async function encaminharMensagemUmbler(
   const token =
     process.env.UMBLER_TOKEN;
 
+
   const organizationId =
     process.env
       .UMBLER_ORGANIZATION_ID;
@@ -829,6 +835,7 @@ async function encaminharMensagemUmbler(
           JSON.stringify({
             chatId,
             organizationId,
+
             skipReassign:
               false,
           }),
@@ -877,13 +884,15 @@ async function encaminharMensagemUmbler(
 // DESCOBRIR CLIENTE PELO InReplyTo
 // ==========================================
 //
-// O consultor deve usar RESPONDER na
-// mensagem da Central que contém:
+// FUNCIONA QUANDO O CONSULTOR USA RESPONDER:
 //
-// #5511999999999
+// A) na mensagem com:
+//    #5511...
 //
-// Se necessário seguimos até 5 níveis
-// de InReplyTo procurando o telefone.
+// OU:
+//
+// B) no cabeçalho com:
+//    *Telefone:* +5511...
 //
 // ==========================================
 
@@ -940,6 +949,18 @@ async function resolverTelefonePorInReplyTo(
       !consulta.resultado
     ) {
 
+      console.error(
+        "ERRO AO RESOLVER INREPLYTO:",
+        {
+          nivel,
+          idAtual,
+
+          status:
+            consulta.status,
+        }
+      );
+
+
       return {
         telefone:
           null,
@@ -981,6 +1002,9 @@ async function resolverTelefonePorInReplyTo(
           Boolean(
             telefone
           ),
+
+        telefone:
+          telefone || null,
 
         tipo:
           mensagem?.messageType ||
@@ -1033,16 +1057,6 @@ async function resolverTelefonePorInReplyTo(
 // ENVIAR ARQUIVO PELA CENTRAL
 // CONSULTOR → CLIENTE
 // ==========================================
-//
-// 1. Baixa o arquivo da URL da Umbler
-// 2. Cria multipart/form-data
-// 3. Envia pelo /messages/simplified/
-//
-// NÃO definimos Content-Type manualmente,
-// porque o fetch precisa criar o boundary
-// do multipart automaticamente.
-//
-// ==========================================
 
 async function enviarArquivoSimplificado({
   toPhone,
@@ -1054,9 +1068,11 @@ async function enviarArquivoSimplificado({
   const token =
     process.env.UMBLER_TOKEN;
 
+
   const organizationId =
     process.env
       .UMBLER_ORGANIZATION_ID;
+
 
   const fromPhone =
     process.env.CENTRAL_PHONE;
@@ -1076,7 +1092,7 @@ async function enviarArquivoSimplificado({
 
 
   // ========================================
-  // BAIXAR DA PRÓPRIA UMBLER
+  // BAIXAR ARQUIVO DA UMBLER
   // ========================================
 
   const download =
@@ -1142,20 +1158,24 @@ async function enviarArquivoSimplificado({
     toPhone
   );
 
+
   form.append(
     "fromPhone",
     fromPhone
   );
+
 
   form.append(
     "organizationId",
     organizationId
   );
 
+
   form.append(
     "skipReassign",
     "false"
   );
+
 
   form.append(
     "file",
@@ -1221,7 +1241,7 @@ async function enviarArquivoSimplificado({
 
 
 // ==========================================
-// TIPO DA MÍDIA
+// DESCRIÇÃO DA MÍDIA
 // ==========================================
 
 function descricaoMidia(tipo) {
@@ -1379,7 +1399,8 @@ function mensagemInstrucaoResposta(
     `#${numeroComando} sua mensagem\n\n` +
 
     `🎤📷📎 *Áudio, foto, vídeo ou arquivo:*\n` +
-    `Use *RESPONDER* nesta mensagem e envie a mídia.`
+
+    `Use *RESPONDER* nesta mensagem ou no cabeçalho que mostra o telefone do cliente e envie a mídia.`
   );
 
 }
@@ -1688,6 +1709,16 @@ export default async function handler(
             inReplyTo
           ),
 
+        inReplyToId:
+          inReplyTo?.Id ||
+          inReplyTo?.id ||
+          null,
+
+        inReplyToChatId:
+          inReplyTo?.ChatId ||
+          inReplyTo?.chatId ||
+          null,
+
         sentByOrganizationMember:
           Boolean(
             sentByOrganizationMember
@@ -1767,6 +1798,7 @@ export default async function handler(
     // ========================================
 
     if (consultorRemetente) {
+
 
       // ====================================
       // TEXTO
@@ -1956,8 +1988,6 @@ export default async function handler(
         )
       ) {
 
-        // Evita processar mídia enviada
-        // pelo próprio sistema ao consultor.
         if (
           source !== "contact" ||
           sentByOrganizationMember
@@ -2019,8 +2049,6 @@ export default async function handler(
         }
 
 
-        // Consultor mandou mídia sem usar
-        // RESPONDER.
         if (!inReplyTo) {
 
           await enviarMensagem({
@@ -2033,7 +2061,7 @@ export default async function handler(
             message:
               `⚠️ Não consegui identificar para qual cliente enviar essa mídia.\n\n` +
 
-              `Para áudio, foto, vídeo ou arquivo, use *RESPONDER* na mensagem da Central que contém *#TELEFONE* e envie a mídia.`,
+              `Use *RESPONDER* na mensagem da Central que mostra *Telefone:* ou *#TELEFONE* e envie a mídia.`,
           });
 
 
@@ -2075,7 +2103,7 @@ export default async function handler(
             message:
               `⚠️ Não consegui identificar o cliente dessa resposta.\n\n` +
 
-              `Para enviar mídia pela Central, use *RESPONDER* exatamente na mensagem que contém *#TELEFONE* e envie o áudio, foto, vídeo ou arquivo.`,
+              `Para enviar mídia pela Central, use *RESPONDER* na mensagem que mostra *Telefone:* ou *#TELEFONE* do cliente e envie o áudio, foto, vídeo ou arquivo.`,
           });
 
 
@@ -2094,6 +2122,22 @@ export default async function handler(
             });
 
         }
+
+
+        console.log(
+          "DESTINO DA MÍDIA RESOLVIDO:",
+          {
+            consultor:
+              consultorRemetente.nome,
+
+            cliente:
+              destino.telefone,
+
+            replyMessageId:
+              destino.messageId ||
+              null,
+          }
+        );
 
 
         // ==================================
@@ -2132,8 +2176,7 @@ export default async function handler(
 
 
         const fileUrl =
-          analise.arquivoUrl ||
-          analise.thumbnailUrl;
+          analise.arquivoUrl;
 
 
         if (!fileUrl) {
@@ -2155,7 +2198,7 @@ export default async function handler(
 
 
         // ==================================
-        // IDENTIFICAR O CONSULTOR
+        // IDENTIFICAR CONSULTOR
         // ==================================
 
         const identificacao =
@@ -2187,7 +2230,7 @@ export default async function handler(
 
 
         // ==================================
-        // ENVIAR ARQUIVO AO CLIENTE
+        // ENVIAR MÍDIA AO CLIENTE
         // ==================================
 
         const envioArquivo =
@@ -2260,7 +2303,7 @@ export default async function handler(
 
 
         // ==================================
-        // CONFIRMAR PARA CONSULTOR
+        // CONFIRMAÇÃO AO CONSULTOR
         // ==================================
 
         await enviarMensagem({
@@ -2588,8 +2631,6 @@ export default async function handler(
         .analise;
 
 
-    // Proteção contra segundo webhook
-    // da mesma mídia já encaminhada.
     if (
       analise.forwardCount > 0
     ) {
@@ -2744,8 +2785,8 @@ export default async function handler(
 
 
     // ======================================
-    // MENSAGEM QUE SERVIRÁ TAMBÉM
-    // COMO REFERÊNCIA PARA RESPONDER MÍDIA
+    // INSTRUÇÃO QUE TAMBÉM SERVE
+    // DE REFERÊNCIA PARA O RESPONDER
     // ======================================
 
     await enviarMensagem({
