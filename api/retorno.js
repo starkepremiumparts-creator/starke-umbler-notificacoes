@@ -610,14 +610,10 @@ async function aguardarMidiaPronta(
 
 
     const pronta =
-      analise.estado !==
-        "processing" &&
-      (
-        Boolean(
-          analise.arquivoUrl
-        ) ||
-        analise.possuiData
-      );
+  Boolean(
+    analise.arquivoUrl
+  ) ||
+  analise.possuiData;
 
 
     if (pronta) {
