@@ -13,6 +13,17 @@ globalThis.__STK_MIDIAS_PROCESSADAS =
 
 
 // ==========================================
+// CONFIGURAÇÕES
+// ==========================================
+
+// Tempo para a mídia aparecer no WhatsApp
+// antes da mensagem de instrução.
+//
+// Cabeçalho → Mídia → espera → Instrução
+const ESPERA_APOS_ENVIO_MIDIA_MS = 4000;
+
+
+// ==========================================
 // UTILITÁRIOS
 // ==========================================
 
@@ -79,11 +90,6 @@ function normalizarTextoComparacao(valor) {
 
 // ==========================================
 // CONSULTORES
-//
-// RETORNO_CONSULTORES:
-//
-// Nome|WhatsApp|Etiqueta|ChatId
-//
 // ==========================================
 
 function cadastrarConsultor(
@@ -102,8 +108,7 @@ function cadastrarConsultor(
     return;
   }
 
-  // RETORNO_CONSULTORES
-  // tem prioridade.
+
   if (
     consultores.has(
       telefoneNormalizado
@@ -111,6 +116,7 @@ function cadastrarConsultor(
   ) {
     return;
   }
+
 
   consultores.set(
     telefoneNormalizado,
@@ -140,10 +146,12 @@ function obterConsultoresAutorizados() {
   const consultores =
     new Map();
 
+
   const lista =
     process.env
       .RETORNO_CONSULTORES ||
     "";
+
 
   const linhas =
     lista
@@ -164,6 +172,7 @@ function obterConsultoresAutorizados() {
             parte.trim()
         );
 
+
     if (
       partes.length >= 2
     ) {
@@ -179,7 +188,7 @@ function obterConsultoresAutorizados() {
 
 
   // ========================================
-  // COMPATIBILIDADE COM VARIÁVEIS ANTIGAS
+  // VARIÁVEIS ANTIGAS
   // ========================================
 
   cadastrarConsultor(
@@ -189,12 +198,14 @@ function obterConsultoresAutorizados() {
       .CONSULTOR_SANTOS_PHONE
   );
 
+
   cadastrarConsultor(
     consultores,
     "Consultor Campinas",
     process.env
       .CONSULTOR_CAMPINAS_PHONE
   );
+
 
   cadastrarConsultor(
     consultores,
@@ -264,15 +275,6 @@ function localizarConsultorPorEtiqueta(
 
 // ==========================================
 // EXTRAIR TELEFONE
-//
-// ACEITA:
-//
-// #5511984984178
-//
-// OU:
-//
-// *Telefone:* +5511984984178
-//
 // ==========================================
 
 function extrairTelefoneDoTexto(
@@ -298,9 +300,7 @@ function extrairTelefoneDoTexto(
         );
 
 
-    // ======================================
     // #5511...
-    // ======================================
 
     const porComando =
       textoLimpo.match(
@@ -321,9 +321,7 @@ function extrairTelefoneDoTexto(
     }
 
 
-    // ======================================
     // Telefone: +5511...
-    // ======================================
 
     const porRotulo =
       textoLimpo.match(
@@ -376,7 +374,6 @@ async function lerResposta(
 
 
 // ==========================================
-// UMBLER
 // ENVIAR TEXTO
 // ==========================================
 
@@ -466,8 +463,7 @@ async function enviarMensagem({
 
 
 // ==========================================
-// UMBLER
-// CONSULTAR MENSAGEM
+// CONSULTAR MENSAGEM UMBLER
 // ==========================================
 
 async function obterMensagemUmbler(
@@ -613,10 +609,6 @@ function analisarMidia(
     thumbnail,
 
 
-    // ======================================
-    // ARQUIVO ORIGINAL
-    // ======================================
-
     arquivoUrl,
 
 
@@ -629,10 +621,6 @@ function analisarMidia(
         arquivoData
       ),
 
-
-    // ======================================
-    // MINIATURA
-    // ======================================
 
     thumbnailUrl,
 
@@ -673,27 +661,7 @@ function analisarMidia(
 
 
 // ==========================================
-// AGUARDAR ARQUIVO ORIGINAL
-// ==========================================
-//
-// MUITO IMPORTANTE:
-//
-// thumbnail.data
-// thumbnail.url
-//
-// NÃO SÃO MAIS CONSIDERADOS
-// MÍDIA PRONTA.
-//
-// A thumbnail é somente uma prévia.
-//
-// O sistema só avança quando existir:
-//
-// file.url
-//
-// OU
-//
-// file.data
-//
+// AGUARDAR MÍDIA ORIGINAL
 // ==========================================
 
 async function aguardarMidiaOriginal(
@@ -713,7 +681,7 @@ async function aguardarMidiaOriginal(
 
 
   // ========================================
-  // PRIMEIRO ANALISA O PRÓPRIO WEBHOOK
+  // ANALISAR O WEBHOOK INICIAL
   // ========================================
 
   if (mensagemInicial) {
@@ -776,7 +744,7 @@ async function aguardarMidiaOriginal(
 
 
   // ========================================
-  // TENTAR OBTER O ORIGINAL PELA API
+  // CONSULTAR API
   // ========================================
 
   for (
@@ -874,10 +842,6 @@ async function aguardarMidiaOriginal(
     );
 
 
-    // ======================================
-    // SÓ ACEITA O ARQUIVO ORIGINAL
-    // ======================================
-
     if (
       analise
         .possuiArquivoOriginal
@@ -924,18 +888,14 @@ function mimePadraoPorTipo(
     case "image":
       return "image/jpeg";
 
-
     case "audio":
       return "audio/mpeg";
-
 
     case "video":
       return "video/mp4";
 
-
     case "sticker":
       return "image/webp";
-
 
     default:
       return "application/octet-stream";
@@ -985,18 +945,6 @@ function nomePadraoPorTipo(
     }
 
 
-    if (
-      mime.includes(
-        "heic"
-      ) ||
-      mime.includes(
-        "heif"
-      )
-    ) {
-      return "imagem.heic";
-    }
-
-
     return "imagem.jpg";
   }
 
@@ -1020,18 +968,6 @@ function nomePadraoPorTipo(
       )
     ) {
       return "audio.wav";
-    }
-
-
-    if (
-      mime.includes(
-        "mp4"
-      ) ||
-      mime.includes(
-        "m4a"
-      )
-    ) {
-      return "audio.m4a";
     }
 
 
@@ -1060,19 +996,7 @@ function nomePadraoPorTipo(
 
 
 // ==========================================
-// ESCOLHER SOMENTE MÍDIA ORIGINAL
-// ==========================================
-//
-// PRIORIDADE:
-//
-// 1. file.url
-// 2. file.data
-//
-// NÃO USA:
-//
-// thumbnail.url
-// thumbnail.data
-//
+// FONTE DA MÍDIA ORIGINAL
 // ==========================================
 
 function obterFonteMidiaOriginal(
@@ -1099,10 +1023,6 @@ function obterFonteMidiaOriginal(
     );
 
 
-  // ========================================
-  // ORIGINAL VIA URL
-  // ========================================
-
   if (
     analise.arquivoUrl
   ) {
@@ -1122,10 +1042,6 @@ function obterFonteMidiaOriginal(
     };
   }
 
-
-  // ========================================
-  // ORIGINAL VIA BASE64
-  // ========================================
 
   if (
     analise.arquivoData
@@ -1168,12 +1084,6 @@ function decodificarBase64(
     contentTypePadrao ||
     "application/octet-stream";
 
-
-  // ========================================
-  // SUPORTA DATA URI
-  //
-  // data:image/jpeg;base64,/9j/...
-  // ========================================
 
   const dataUri =
     base64.match(
@@ -1228,16 +1138,7 @@ function decodificarBase64(
 
 
 // ==========================================
-// ENVIAR ARQUIVO PELA CENTRAL
-//
-// ACEITA:
-//
-// file.url
-//
-// OU
-//
-// file.data
-//
+// ENVIAR ARQUIVO
 // ==========================================
 
 async function enviarArquivoSimplificado({
@@ -1284,7 +1185,7 @@ async function enviarArquivoSimplificado({
 
 
   // ========================================
-  // ARQUIVO ORIGINAL VIA URL
+  // URL
   // ========================================
 
   if (fileUrl) {
@@ -1327,7 +1228,7 @@ async function enviarArquivoSimplificado({
 
 
   // ========================================
-  // ARQUIVO ORIGINAL VIA BASE64
+  // BASE64
   // ========================================
 
   else if (fileData) {
@@ -1340,13 +1241,11 @@ async function enviarArquivoSimplificado({
 
 
       bytes =
-        decodificado
-          .bytes;
+        decodificado.bytes;
 
 
       mime =
-        decodificado
-          .contentType;
+        decodificado.contentType;
     } catch (erro) {
       return {
         ok:
@@ -1377,10 +1276,6 @@ async function enviarArquivoSimplificado({
   }
 
 
-  // ========================================
-  // CRIAR BLOB
-  // ========================================
-
   const blob =
     new Blob(
       [bytes],
@@ -1390,10 +1285,6 @@ async function enviarArquivoSimplificado({
       }
     );
 
-
-  // ========================================
-  // MULTIPART
-  // ========================================
 
   const form =
     new FormData();
@@ -1473,7 +1364,7 @@ async function enviarArquivoSimplificado({
 
 
 // ==========================================
-// RESOLVER CLIENTE PELO InReplyTo
+// RESOLVER TELEFONE PELO InReplyTo
 // ==========================================
 
 async function resolverTelefonePorInReplyTo(
@@ -1527,19 +1418,6 @@ async function resolverTelefonePorInReplyTo(
       !consulta.ok ||
       !consulta.resultado
     ) {
-      console.error(
-        "ERRO AO RESOLVER INREPLYTO:",
-        {
-          nivel,
-
-          idAtual,
-
-          status:
-            consulta.status,
-        }
-      );
-
-
       return {
         telefone:
           null,
@@ -1589,11 +1467,6 @@ async function resolverTelefonePorInReplyTo(
         telefone:
           telefone ||
           null,
-
-        tipo:
-          mensagem?.messageType ||
-          mensagem?.MessageType ||
-          null,
       }
     );
 
@@ -1636,7 +1509,7 @@ async function resolverTelefonePorInReplyTo(
 
 
 // ==========================================
-// TIPOS DE MÍDIA
+// MÍDIA
 // ==========================================
 
 function descricaoMidia(
@@ -1649,71 +1522,44 @@ function descricaoMidia(
   ) {
     case "audio":
       return {
-        emoji:
-          "🎤",
-
-        nome:
-          "Áudio",
+        emoji: "🎤",
+        nome: "Áudio",
       };
-
 
     case "image":
       return {
-        emoji:
-          "🖼️",
-
-        nome:
-          "Imagem",
+        emoji: "🖼️",
+        nome: "Imagem",
       };
-
 
     case "video":
       return {
-        emoji:
-          "🎥",
-
-        nome:
-          "Vídeo",
+        emoji: "🎥",
+        nome: "Vídeo",
       };
-
 
     case "file":
       return {
-        emoji:
-          "📎",
-
-        nome:
-          "Arquivo",
+        emoji: "📎",
+        nome: "Arquivo",
       };
-
 
     case "document":
       return {
-        emoji:
-          "📄",
-
-        nome:
-          "Documento",
+        emoji: "📄",
+        nome: "Documento",
       };
-
 
     case "sticker":
       return {
-        emoji:
-          "🖼️",
-
-        nome:
-          "Sticker",
+        emoji: "🖼️",
+        nome: "Sticker",
       };
-
 
     default:
       return {
-        emoji:
-          "📎",
-
-        nome:
-          "Mídia",
+        emoji: "📎",
+        nome: "Mídia",
       };
   }
 }
@@ -1770,7 +1616,7 @@ function marcarMidiaProcessada(
 
 
 // ==========================================
-// INSTRUÇÃO PARA CONSULTOR
+// INSTRUÇÃO
 // ==========================================
 
 function mensagemInstrucaoResposta(
@@ -1791,7 +1637,7 @@ function mensagemInstrucaoResposta(
 
 
 // ==========================================
-// HANDLER PRINCIPAL
+// HANDLER
 // ==========================================
 
 export default async function handler(
@@ -1799,10 +1645,6 @@ export default async function handler(
   res
 ) {
   try {
-
-    // ======================================
-    // SEGURANÇA
-    // ======================================
 
     const url =
       new URL(
@@ -1842,10 +1684,6 @@ export default async function handler(
     }
 
 
-    // ======================================
-    // GET
-    // ======================================
-
     if (
       req.method ===
       "GET"
@@ -1881,10 +1719,6 @@ export default async function handler(
     }
 
 
-    // ======================================
-    // BODY
-    // ======================================
-
     let body =
       req.body;
 
@@ -1919,10 +1753,6 @@ export default async function handler(
       body || {};
 
 
-    // ======================================
-    // EVENTO
-    // ======================================
-
     const tipoEvento =
       body.Type ||
       body.type;
@@ -1948,10 +1778,6 @@ export default async function handler(
     }
 
 
-    // ======================================
-    // PAYLOAD
-    // ======================================
-
     const conteudoChat =
       body?.Payload?.Content ||
       body?.payload?.content ||
@@ -1965,18 +1791,10 @@ export default async function handler(
 
 
     const ultimaMensagem =
-      conteudoChat
-        ?.LastMessage ||
-
-      conteudoChat
-        ?.lastMessage ||
-
+      conteudoChat?.LastMessage ||
+      conteudoChat?.lastMessage ||
       {};
 
-
-    // ======================================
-    // CONTATO
-    // ======================================
 
     const telefoneContato =
       normalizarTelefone(
@@ -1998,10 +1816,6 @@ export default async function handler(
       contato?.tags ||
       [];
 
-
-    // ======================================
-    // MENSAGEM
-    // ======================================
 
     const mensagemRecebida =
       textoValido(
@@ -2037,16 +1851,6 @@ export default async function handler(
       );
 
 
-    const messageState =
-      String(
-        ultimaMensagem?.MessageState ||
-        ultimaMensagem?.messageState ||
-        ""
-      )
-        .trim()
-        .toLowerCase();
-
-
     const inReplyTo =
       ultimaMensagem?.InReplyTo ||
       ultimaMensagem?.inReplyTo ||
@@ -2054,12 +1858,8 @@ export default async function handler(
 
 
     const sentByOrganizationMember =
-      ultimaMensagem
-        ?.SentByOrganizationMember ||
-
-      ultimaMensagem
-        ?.sentByOrganizationMember ||
-
+      ultimaMensagem?.SentByOrganizationMember ||
+      ultimaMensagem?.sentByOrganizationMember ||
       null;
 
 
@@ -2074,61 +1874,25 @@ export default async function handler(
       "EVENTO RECEBIDO:",
       {
         telefoneContato,
-
         nomeContato,
-
         source,
-
         messageType,
-
         messageId,
-
-        messageState,
-
-        isPrivate,
 
         possuiInReplyTo:
           Boolean(
             inReplyTo
           ),
 
-        inReplyToId:
-          inReplyTo?.Id ||
-          inReplyTo?.id ||
-          null,
-
-        inReplyToChatId:
-          inReplyTo?.ChatId ||
-          inReplyTo?.chatId ||
-          null,
-
-        sentByOrganizationMember:
-          Boolean(
-            sentByOrganizationMember
-          ),
-
-        tags:
-          Array.isArray(tags)
-            ?
-              tags
-                .map(
-                  (tag) =>
-                    tag?.Name ||
-                    tag?.name
-                )
-                .filter(Boolean)
-            :
-              [],
-
-        possuiConteudo:
-          Boolean(
-            mensagemRecebida
-          ),
+        isPrivate,
       }
     );
 
 
-    if (isPrivate) {
+    if (
+      isPrivate ||
+      !telefoneContato
+    ) {
       return res
         .status(200)
         .json({
@@ -2137,25 +1901,6 @@ export default async function handler(
 
           ignored:
             true,
-
-          reason:
-            "private_message",
-        });
-    }
-
-
-    if (!telefoneContato) {
-      return res
-        .status(200)
-        .json({
-          received:
-            true,
-
-          ignored:
-            true,
-
-          reason:
-            "missing_phone",
         });
     }
 
@@ -2177,7 +1922,7 @@ export default async function handler(
     if (consultorRemetente) {
 
       // ====================================
-      // TEXTO CONSULTOR → CLIENTE
+      // TEXTO
       // ====================================
 
       if (
@@ -2211,26 +1956,6 @@ export default async function handler(
 
 
         if (!comando) {
-          await enviarMensagem({
-            toPhone:
-              telefoneContato,
-
-            contactName:
-              consultorRemetente.nome,
-
-            message:
-              `⚠️ ${consultorRemetente.nome}, formato inválido.\n\n` +
-
-              `Use:\n\n` +
-
-              `#TELEFONE mensagem\n\n` +
-
-              `Exemplo:\n` +
-
-              `#5511999999999 Bom dia! Temos essa peça disponível.`,
-          });
-
-
           return res
             .status(200)
             .json({
@@ -2270,14 +1995,11 @@ export default async function handler(
 
               processed:
                 false,
-
-              reason:
-                "invalid_destination",
             });
         }
 
 
-        const envioCliente =
+        const envio =
           await enviarMensagem({
             toPhone:
               telefoneCliente,
@@ -2287,15 +2009,7 @@ export default async function handler(
           });
 
 
-        if (
-          !envioCliente.ok
-        ) {
-          console.error(
-            "ERRO CONSULTOR → CLIENTE:",
-            envioCliente
-          );
-
-
+        if (!envio.ok) {
           return res
             .status(200)
             .json({
@@ -2304,9 +2018,6 @@ export default async function handler(
 
               processed:
                 false,
-
-              reason:
-                "client_send_error",
             });
         }
 
@@ -2366,64 +2077,14 @@ export default async function handler(
 
               ignored:
                 true,
-
-              reason:
-                "consultant_media_not_incoming_contact",
-            });
-        }
-
-
-        if (!messageId) {
-          return res
-            .status(200)
-            .json({
-              received:
-                true,
-
-              ignored:
-                true,
-
-              reason:
-                "missing_message_id",
             });
         }
 
 
         if (
-          midiasProcessadas.has(
-            messageId
-          )
+          !messageId ||
+          !inReplyTo
         ) {
-          return res
-            .status(200)
-            .json({
-              received:
-                true,
-
-              ignored:
-                true,
-
-              reason:
-                "media_already_processed_local",
-            });
-        }
-
-
-        if (!inReplyTo) {
-          await enviarMensagem({
-            toPhone:
-              telefoneContato,
-
-            contactName:
-              consultorRemetente.nome,
-
-            message:
-              `⚠️ Não consegui identificar para qual cliente enviar essa mídia.\n\n` +
-
-              `Use *RESPONDER* na mensagem da Central que mostra *Telefone:* ou *#TELEFONE* e envie a mídia.`,
-          });
-
-
           return res
             .status(200)
             .json({
@@ -2432,9 +2093,6 @@ export default async function handler(
 
               processed:
                 false,
-
-              reason:
-                "media_without_reply_reference",
             });
         }
 
@@ -2446,20 +2104,6 @@ export default async function handler(
 
 
         if (!destino.telefone) {
-          await enviarMensagem({
-            toPhone:
-              telefoneContato,
-
-            contactName:
-              consultorRemetente.nome,
-
-            message:
-              `⚠️ Não consegui identificar o cliente dessa resposta.\n\n` +
-
-              `Para enviar mídia pela Central, use *RESPONDER* na mensagem que mostra *Telefone:* ou *#TELEFONE* do cliente e envie a mídia.`,
-          });
-
-
           return res
             .status(200)
             .json({
@@ -2468,33 +2112,9 @@ export default async function handler(
 
               processed:
                 false,
-
-              reason:
-                destino.reason ||
-                "client_not_resolved",
             });
         }
 
-
-        console.log(
-          "DESTINO DA MÍDIA RESOLVIDO:",
-          {
-            consultor:
-              consultorRemetente.nome,
-
-            cliente:
-              destino.telefone,
-
-            replyMessageId:
-              destino.messageId ||
-              null,
-          }
-        );
-
-
-        // ==================================
-        // ESPERAR ARQUIVO ORIGINAL
-        // ==================================
 
         const resultadoMidia =
           await aguardarMidiaOriginal(
@@ -2506,37 +2126,6 @@ export default async function handler(
         if (
           !resultadoMidia.pronta
         ) {
-          console.error(
-            "MÍDIA ORIGINAL DO CONSULTOR NÃO DISPONÍVEL:",
-            {
-              messageId,
-
-              consultor:
-                consultorRemetente.nome,
-
-              cliente:
-                destino.telefone,
-
-              tipo:
-                messageType,
-            }
-          );
-
-
-          await enviarMensagem({
-            toPhone:
-              telefoneContato,
-
-            contactName:
-              consultorRemetente.nome,
-
-            message:
-              `⚠️ A mídia foi recebida, mas a Umbler não liberou o arquivo original em qualidade completa.\n\n` +
-
-              `Não enviei a miniatura para evitar perda de qualidade. Tente enviar novamente em alguns segundos.`,
-          });
-
-
           return res
             .status(200)
             .json({
@@ -2545,21 +2134,13 @@ export default async function handler(
 
               processed:
                 false,
-
-              reason:
-                "consultant_original_media_not_available",
             });
         }
 
 
-        const analise =
-          resultadoMidia
-            .analise;
-
-
         const fonte =
           obterFonteMidiaOriginal(
-            analise,
+            resultadoMidia.analise,
             messageType
           );
 
@@ -2573,103 +2154,38 @@ export default async function handler(
 
               processed:
                 false,
-
-              reason:
-                "consultant_media_without_original_source",
             });
         }
 
 
-        console.log(
-          "FONTE ORIGINAL CONSULTOR → CLIENTE:",
-          {
-            origem:
-              fonte.origem,
+        await enviarMensagem({
+          toPhone:
+            destino.telefone,
 
-            tipo:
-              messageType,
+          message:
+            `*${consultorRemetente.nome}:*`,
+        });
 
-            contentType:
-              fonte.contentType,
-
-            fileName:
-              fonte.fileName,
-          }
-        );
-
-
-        // ==================================
-        // LEGENDA / IDENTIFICAÇÃO
-        // ==================================
-
-        const legendaConsultor =
-          mensagemRecebida ||
-          analise.legenda;
-
-
-        const identificacao =
-          await enviarMensagem({
-            toPhone:
-              destino.telefone,
-
-            message:
-              legendaConsultor
-
-                ? `*${consultorRemetente.nome}:*\n${legendaConsultor}`
-
-                : `*${consultorRemetente.nome}:*`,
-          });
-
-
-        if (
-          !identificacao.ok
-        ) {
-          return res
-            .status(200)
-            .json({
-              received:
-                true,
-
-              processed:
-                false,
-
-              reason:
-                "consultant_identity_send_error",
-            });
-        }
-
-
-        // ==================================
-        // ENVIAR MÍDIA ORIGINAL
-        // ==================================
 
         const envioArquivo =
           await enviarArquivoSimplificado({
             toPhone:
               destino.telefone,
 
-
             fileUrl:
               fonte.tipo ===
               "url"
-
                 ? fonte.valor
-
                 : null,
-
 
             fileData:
               fonte.tipo ===
               "base64"
-
                 ? fonte.valor
-
                 : null,
-
 
             fileName:
               fonte.fileName,
-
 
             contentType:
               fonte.contentType,
@@ -2677,39 +2193,6 @@ export default async function handler(
 
 
         if (!envioArquivo.ok) {
-          console.error(
-            "ERRO MÍDIA CONSULTOR → CLIENTE:",
-            {
-              consultor:
-                consultorRemetente.nome,
-
-              cliente:
-                destino.telefone,
-
-              origem:
-                fonte.origem,
-
-              status:
-                envioArquivo.status,
-
-              resultado:
-                envioArquivo.resultado,
-            }
-          );
-
-
-          await enviarMensagem({
-            toPhone:
-              telefoneContato,
-
-            contactName:
-              consultorRemetente.nome,
-
-            message:
-              `⚠️ Não consegui enviar a mídia ao cliente pela Central. Tente novamente em alguns instantes.`,
-          });
-
-
           return res
             .status(200)
             .json({
@@ -2718,9 +2201,6 @@ export default async function handler(
 
               processed:
                 false,
-
-              reason:
-                "consultant_media_send_error",
             });
         }
 
@@ -2746,30 +2226,6 @@ export default async function handler(
         });
 
 
-        console.log(
-          "✅ MÍDIA CONSULTOR → CLIENTE:",
-          {
-            messageId,
-
-            consultor:
-              consultorRemetente.nome,
-
-            cliente:
-              destino.telefone,
-
-            tipo:
-              messageType,
-
-            origem:
-              fonte.origem,
-
-            tentativa:
-              resultadoMidia
-                .tentativa,
-          }
-        );
-
-
         return res
           .status(200)
           .json({
@@ -2781,34 +2237,8 @@ export default async function handler(
 
             direction:
               "consultant_to_client_media",
-
-            mediaType:
-              messageType,
-
-            consultor:
-              consultorRemetente.nome,
-
-            cliente:
-              destino.telefone,
-
-            origem:
-              fonte.origem,
           });
       }
-
-
-      return res
-        .status(200)
-        .json({
-          received:
-            true,
-
-          ignored:
-            true,
-
-          reason:
-            "consultant_unsupported_message_type",
-        });
     }
 
 
@@ -2828,9 +2258,6 @@ export default async function handler(
 
           ignored:
             true,
-
-          reason:
-            "not_contact_message",
         });
     }
 
@@ -2867,7 +2294,7 @@ export default async function handler(
 
 
     // ======================================
-    // TEXTO CLIENTE → CONSULTOR
+    // TEXTO
     // ======================================
 
     if (
@@ -2883,9 +2310,6 @@ export default async function handler(
 
             ignored:
               true,
-
-            reason:
-              "empty_text",
           });
       }
 
@@ -2951,11 +2375,6 @@ export default async function handler(
 
           ignored:
             true,
-
-          reason:
-            "unsupported_message_type",
-
-          messageType,
         });
     }
 
@@ -2969,38 +2388,9 @@ export default async function handler(
 
           ignored:
             true,
-
-          reason:
-            "missing_message_id",
         });
     }
 
-
-    if (
-      midiasProcessadas.has(
-        messageId
-      )
-    ) {
-      return res
-        .status(200)
-        .json({
-          received:
-            true,
-
-          ignored:
-            true,
-
-          reason:
-            "media_already_processed_local",
-        });
-    }
-
-
-    // ======================================
-    // ESPERAR O ARQUIVO ORIGINAL
-    //
-    // NÃO USA MAIS THUMBNAIL.
-    // ======================================
 
     const resultadoMidia =
       await aguardarMidiaOriginal(
@@ -3012,41 +2402,6 @@ export default async function handler(
     if (
       !resultadoMidia.pronta
     ) {
-      console.error(
-        "MÍDIA ORIGINAL DO CLIENTE NÃO DISPONÍVEL:",
-        {
-          messageId,
-
-          cliente:
-            telefoneContato,
-
-          consultor:
-            consultorDestino.nome,
-
-          tipo:
-            messageType,
-        }
-      );
-
-
-      await enviarMensagem({
-        toPhone:
-          consultorDestino.telefone,
-
-        contactName:
-          consultorDestino.nome,
-
-        message:
-          `⚠️ *MÍDIA DE CLIENTE AGUARDANDO ARQUIVO ORIGINAL*\n\n` +
-
-          `👤 *Cliente:* ${nomeContato}\n` +
-
-          `📱 *Telefone:* ${telefoneContato}\n\n` +
-
-          `A Umbler enviou apenas a prévia da mídia. Para preservar a qualidade, a miniatura não foi encaminhada.`,
-      });
-
-
       return res
         .status(200)
         .json({
@@ -3057,7 +2412,7 @@ export default async function handler(
             false,
 
           reason:
-            "client_original_media_not_available",
+            "original_media_not_available",
         });
     }
 
@@ -3083,42 +2438,14 @@ export default async function handler(
 
           processed:
             false,
-
-          reason:
-            "client_media_without_original_source",
         });
     }
-
-
-    console.log(
-      "FONTE ORIGINAL CLIENTE → CONSULTOR:",
-      {
-        messageId,
-
-        origem:
-          fonte.origem,
-
-        tipo:
-          messageType,
-
-        contentType:
-          fonte.contentType,
-
-        fileName:
-          fonte.fileName,
-      }
-    );
 
 
     const tipoMidia =
       descricaoMidia(
         messageType
       );
-
-
-    const legendaCliente =
-      mensagemRecebida ||
-      analise.legenda;
 
 
     // ======================================
@@ -3135,24 +2462,10 @@ export default async function handler(
       `${tipoMidia.emoji} *${tipoMidia.nome} recebido do cliente:*`;
 
 
-    if (
-      analise.originalName &&
-      (
-        messageType ===
-          "file" ||
+    const legendaCliente =
+      mensagemRecebida ||
+      analise.legenda;
 
-        messageType ===
-          "document"
-      )
-    ) {
-      cabecalho +=
-        `\n📄 *Arquivo:* ${analise.originalName}`;
-    }
-
-
-    // ======================================
-    // LEGENDA DA FOTO
-    // ======================================
 
     if (
       legendaCliente &&
@@ -3177,9 +2490,7 @@ export default async function handler(
       });
 
 
-    if (
-      !envioCabecalho.ok
-    ) {
+    if (!envioCabecalho.ok) {
       return res
         .status(200)
         .json({
@@ -3196,72 +2507,38 @@ export default async function handler(
 
 
     // ======================================
-    // 2. ENVIAR MÍDIA ORIGINAL
+    // 2. MÍDIA
     // ======================================
 
-    const envioMidiaConsultor =
+    const envioMidia =
       await enviarArquivoSimplificado({
         toPhone:
           consultorDestino.telefone,
 
-
         fileUrl:
           fonte.tipo ===
           "url"
-
             ? fonte.valor
-
             : null,
-
 
         fileData:
           fonte.tipo ===
           "base64"
-
             ? fonte.valor
-
             : null,
-
 
         fileName:
           fonte.fileName,
 
-
         contentType:
           fonte.contentType,
-
 
         contactName:
           consultorDestino.nome,
       });
 
 
-    if (
-      !envioMidiaConsultor.ok
-    ) {
-      console.error(
-        "ERRO MÍDIA CLIENTE → CONSULTOR:",
-        {
-          messageId,
-
-          cliente:
-            telefoneContato,
-
-          consultor:
-            consultorDestino.nome,
-
-          origem:
-            fonte.origem,
-
-          status:
-            envioMidiaConsultor.status,
-
-          resultado:
-            envioMidiaConsultor.resultado,
-        }
-      );
-
-
+    if (!envioMidia.ok) {
       return res
         .status(200)
         .json({
@@ -3272,7 +2549,7 @@ export default async function handler(
             false,
 
           reason:
-            "client_media_send_error",
+            "media_send_error",
         });
     }
 
@@ -3283,25 +2560,53 @@ export default async function handler(
 
 
     // ======================================
-    // 3. INSTRUÇÃO
+    // 3. ESPERAR A MÍDIA APARECER
+    //
+    // IMPORTANTE:
+    // impede a mensagem de instrução
+    // de ultrapassar a mídia.
     // ======================================
 
-    await enviarMensagem({
-      toPhone:
-        consultorDestino.telefone,
+    console.log(
+      "⏳ AGUARDANDO MÍDIA ANTES DA INSTRUÇÃO:",
+      {
+        messageId,
 
-      contactName:
-        consultorDestino.nome,
+        tipo:
+          messageType,
 
-      message:
-        mensagemInstrucaoResposta(
-          numeroComando
-        ),
-    });
+        esperaMs:
+          ESPERA_APOS_ENVIO_MIDIA_MS,
+      }
+    );
+
+
+    await esperar(
+      ESPERA_APOS_ENVIO_MIDIA_MS
+    );
+
+
+    // ======================================
+    // 4. INSTRUÇÃO
+    // ======================================
+
+    const envioInstrucao =
+      await enviarMensagem({
+        toPhone:
+          consultorDestino.telefone,
+
+        contactName:
+          consultorDestino.nome,
+
+        message:
+          mensagemInstrucaoResposta(
+            numeroComando
+          ),
+      });
 
 
     console.log(
-      "✅ MÍDIA ORIGINAL CLIENTE → CONSULTOR:",
+      "✅ FLUXO CLIENTE → CONSULTOR FINALIZADO:",
       {
         messageId,
 
@@ -3317,16 +2622,17 @@ export default async function handler(
         origem:
           fonte.origem,
 
-        tentativa:
-          resultadoMidia
-            .tentativa,
+        cabecalho:
+          envioCabecalho.ok,
 
-        origemConsulta:
-          resultadoMidia
-            .origemConsulta,
+        midia:
+          envioMidia.ok,
 
-        metodo:
-          "simplified_multipart",
+        instrucao:
+          envioInstrucao.ok,
+
+        ordem:
+          "cabecalho > midia > instrucao",
       }
     );
 
@@ -3349,8 +2655,8 @@ export default async function handler(
         consultor:
           consultorDestino.nome,
 
-        origem:
-          fonte.origem,
+        ordem:
+          "header_media_instruction",
       });
 
 
