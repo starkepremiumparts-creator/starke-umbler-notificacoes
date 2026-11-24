@@ -1,26 +1,27 @@
 // ==========================================
 // STÄRKE PARTS
 // CENTRAL ↔ CONSULTORES
+//
 // TEXTO + ÁUDIO + IMAGEM + VÍDEO + ARQUIVOS
+// DEDUPLICAÇÃO PERSISTENTE COM SUPABASE
 // ==========================================
-
-const midiasProcessadas =
-  globalThis.__STK_MIDIAS_PROCESSADAS ||
-  new Set();
-
-globalThis.__STK_MIDIAS_PROCESSADAS =
-  midiasProcessadas;
 
 
 // ==========================================
 // CONFIGURAÇÕES
 // ==========================================
 
-// Tempo para a mídia aparecer no WhatsApp
-// antes da mensagem de instrução.
-//
-// Cabeçalho → Mídia → espera → Instrução
 const ESPERA_APOS_ENVIO_MIDIA_MS = 4000;
+
+
+// Segunda camada de proteção local.
+// O Supabase continua sendo a trava principal.
+const midiasProcessadas =
+  globalThis.__STK_MIDIAS_PROCESSADAS ||
+  new Set();
+
+globalThis.__STK_MIDIAS_PROCESSADAS =
+  midiasProcessadas;
 
 
 // ==========================================
@@ -57,6 +58,7 @@ function normalizarTelefone(valor) {
     String(valor)
       .replace(/\D/g, "");
 
+
   if (
     numero.length === 10 ||
     numero.length === 11
@@ -65,12 +67,14 @@ function normalizarTelefone(valor) {
       "55" + numero;
   }
 
+
   if (
     numero.length < 12 ||
     numero.length > 15
   ) {
     return null;
   }
+
 
   return "+" + numero;
 }
@@ -85,6 +89,301 @@ function normalizarTextoComparacao(valor) {
       /[\u0300-\u036f]/g,
       ""
     );
+}
+
+
+async function lerResposta(resposta) {
+  const texto =
+    await resposta.text();
+
+
+  if (!texto) {
+    return null;
+  }
+
+
+  try {
+    return JSON.parse(texto);
+  } catch {
+    return texto;
+  }
+}
+
+
+// ==========================================
+// SUPABASE
+// ==========================================
+//
+// IMPORTANTE:
+//
+// sb_secret_... NÃO é JWT.
+//
+// Portanto usamos:
+//
+// apikey: SUPABASE_SECRET_KEY
+//
+// e NÃO:
+//
+// Authorization: Bearer sb_secret_...
+//
+// ==========================================
+
+async function chamarRpcSupabase(
+  funcao,
+  parametros = {}
+) {
+  const supabaseUrl =
+    textoValido(
+      process.env.SUPABASE_URL
+    );
+
+
+  const supabaseSecret =
+    textoValido(
+      process.env.SUPABASE_SECRET_KEY
+    );
+
+
+  if (
+    !supabaseUrl ||
+    !supabaseSecret
+  ) {
+    return {
+      ok: false,
+      status: 0,
+      resultado: null,
+      erro:
+        "SUPABASE_URL ou SUPABASE_SECRET_KEY ausente.",
+    };
+  }
+
+
+  const baseUrl =
+    supabaseUrl.replace(
+      /\/+$/,
+      ""
+    );
+
+
+  try {
+    const resposta =
+      await fetch(
+        `${baseUrl}/rest/v1/rpc/${funcao}`,
+        {
+          method: "POST",
+
+          headers: {
+            apikey:
+              supabaseSecret,
+
+            "Content-Type":
+              "application/json",
+
+            Accept:
+              "application/json",
+          },
+
+          body:
+            JSON.stringify(
+              parametros
+            ),
+        }
+      );
+
+
+    const resultado =
+      await lerResposta(
+        resposta
+      );
+
+
+    return {
+      ok:
+        resposta.ok,
+
+      status:
+        resposta.status,
+
+      resultado,
+
+      erro:
+        resposta.ok
+          ? null
+          : resultado,
+    };
+
+  } catch (erro) {
+    return {
+      ok: false,
+      status: 0,
+      resultado: null,
+
+      erro:
+        erro?.message ||
+        String(erro),
+    };
+  }
+}
+
+
+// ==========================================
+// ASSUMIR PROCESSAMENTO
+// ==========================================
+
+async function assumirWebhook(
+  messageId
+) {
+  const resposta =
+    await chamarRpcSupabase(
+      "claim_umbler_webhook",
+      {
+        p_message_id:
+          messageId,
+      }
+    );
+
+
+  if (!resposta.ok) {
+    console.error(
+      "❌ ERRO SUPABASE CLAIM:",
+      {
+        messageId,
+
+        status:
+          resposta.status,
+
+        erro:
+          resposta.erro,
+      }
+    );
+
+
+    return {
+      ok: false,
+      claimed: false,
+    };
+  }
+
+
+  const claimed =
+    resposta.resultado === true;
+
+
+  console.log(
+    "🔐 DEDUPE CLAIM:",
+    {
+      messageId,
+      claimed,
+    }
+  );
+
+
+  return {
+    ok: true,
+    claimed,
+  };
+}
+
+
+// ==========================================
+// MARCAR CONCLUÍDO
+// ==========================================
+
+async function concluirWebhook(
+  messageId
+) {
+  const resposta =
+    await chamarRpcSupabase(
+      "complete_umbler_webhook",
+      {
+        p_message_id:
+          messageId,
+      }
+    );
+
+
+  if (!resposta.ok) {
+    console.error(
+      "⚠️ ERRO SUPABASE COMPLETE:",
+      {
+        messageId,
+
+        status:
+          resposta.status,
+
+        erro:
+          resposta.erro,
+      }
+    );
+
+
+    return false;
+  }
+
+
+  console.log(
+    "✅ DEDUPE COMPLETE:",
+    {
+      messageId,
+    }
+  );
+
+
+  return true;
+}
+
+
+// ==========================================
+// LIBERAR PROCESSAMENTO
+// ==========================================
+//
+// Usado somente quando ainda não começamos
+// a enviar o conteúdo e queremos permitir
+// uma nova tentativa posterior.
+//
+// ==========================================
+
+async function liberarWebhook(
+  messageId
+) {
+  const resposta =
+    await chamarRpcSupabase(
+      "release_umbler_webhook",
+      {
+        p_message_id:
+          messageId,
+      }
+    );
+
+
+  if (!resposta.ok) {
+    console.error(
+      "⚠️ ERRO SUPABASE RELEASE:",
+      {
+        messageId,
+
+        status:
+          resposta.status,
+
+        erro:
+          resposta.erro,
+      }
+    );
+
+
+    return false;
+  }
+
+
+  console.log(
+    "🔓 DEDUPE RELEASE:",
+    {
+      messageId,
+    }
+  );
+
+
+  return true;
 }
 
 
@@ -104,11 +403,14 @@ function cadastrarConsultor(
       telefone
     );
 
+
   if (!telefoneNormalizado) {
     return;
   }
 
 
+  // RETORNO_CONSULTORES
+  // tem prioridade sobre variáveis antigas.
   if (
     consultores.has(
       telefoneNormalizado
@@ -188,7 +490,7 @@ function obterConsultoresAutorizados() {
 
 
   // ========================================
-  // VARIÁVEIS ANTIGAS
+  // COMPATIBILIDADE COM VARIÁVEIS ANTIGAS
   // ========================================
 
   cadastrarConsultor(
@@ -220,7 +522,7 @@ function obterConsultoresAutorizados() {
 
 
 // ==========================================
-// LOCALIZAR CONSULTOR PELA ETIQUETA
+// CONSULTOR PELA ETIQUETA
 // ==========================================
 
 function localizarConsultorPorEtiqueta(
@@ -348,32 +650,7 @@ function extrairTelefoneDoTexto(
 
 
 // ==========================================
-// LER RESPOSTA FETCH
-// ==========================================
-
-async function lerResposta(
-  resposta
-) {
-  const texto =
-    await resposta.text();
-
-
-  if (!texto) {
-    return null;
-  }
-
-
-  try {
-    return JSON.parse(
-      texto
-    );
-  } catch {
-    return texto;
-  }
-}
-
-
-// ==========================================
+// UMBLER
 // ENVIAR TEXTO
 // ==========================================
 
@@ -428,8 +705,7 @@ async function enviarMensagem({
     await fetch(
       "https://app-utalk.umbler.com/api/v1/messages/simplified/",
       {
-        method:
-          "POST",
+        method: "POST",
 
         headers: {
           Authorization:
@@ -463,7 +739,8 @@ async function enviarMensagem({
 
 
 // ==========================================
-// CONSULTAR MENSAGEM UMBLER
+// UMBLER
+// OBTER MENSAGEM
 // ==========================================
 
 async function obterMensagemUmbler(
@@ -507,8 +784,7 @@ async function obterMensagemUmbler(
     await fetch(
       url,
       {
-        method:
-          "GET",
+        method: "GET",
 
         headers: {
           Authorization:
@@ -604,14 +880,10 @@ function analisarMidia(
 
 
     arquivo,
-
-
     thumbnail,
 
 
     arquivoUrl,
-
-
     arquivoData,
 
 
@@ -623,8 +895,6 @@ function analisarMidia(
 
 
     thumbnailUrl,
-
-
     thumbnailData,
 
 
@@ -680,10 +950,6 @@ async function aguardarMidiaOriginal(
     null;
 
 
-  // ========================================
-  // ANALISAR O WEBHOOK INICIAL
-  // ========================================
-
   if (mensagemInicial) {
     const inicial =
       analisarMidia(
@@ -727,25 +993,15 @@ async function aguardarMidiaOriginal(
         .possuiArquivoOriginal
     ) {
       return {
-        pronta:
-          true,
-
-        analise:
-          inicial,
-
-        tentativa:
-          0,
-
+        pronta: true,
+        analise: inicial,
+        tentativa: 0,
         origemConsulta:
           "webhook",
       };
     }
   }
 
-
-  // ========================================
-  // CONSULTAR API
-  // ========================================
 
   for (
     let tentativa = 1;
@@ -776,7 +1032,6 @@ async function aguardarMidiaOriginal(
         "ERRO CONSULTA MÍDIA:",
         {
           tentativa,
-
           messageId,
 
           status:
@@ -805,7 +1060,6 @@ async function aguardarMidiaOriginal(
       "TENTATIVA MÍDIA ORIGINAL:",
       {
         tentativa,
-
         messageId,
 
         estado:
@@ -847,13 +1101,9 @@ async function aguardarMidiaOriginal(
         .possuiArquivoOriginal
     ) {
       return {
-        pronta:
-          true,
-
+        pronta: true,
         consulta,
-
         analise,
-
         tentativa,
 
         origemConsulta:
@@ -864,8 +1114,7 @@ async function aguardarMidiaOriginal(
 
 
   return {
-    pronta:
-      false,
+    pronta: false,
 
     consulta:
       ultimaConsulta,
@@ -927,23 +1176,13 @@ function nomePadraoPorTipo(
     tipoNormalizado ===
     "image"
   ) {
-    if (
-      mime.includes(
-        "png"
-      )
-    ) {
+    if (mime.includes("png")) {
       return "imagem.png";
     }
 
-
-    if (
-      mime.includes(
-        "webp"
-      )
-    ) {
+    if (mime.includes("webp")) {
       return "imagem.webp";
     }
-
 
     return "imagem.jpg";
   }
@@ -953,23 +1192,20 @@ function nomePadraoPorTipo(
     tipoNormalizado ===
     "audio"
   ) {
-    if (
-      mime.includes(
-        "ogg"
-      )
-    ) {
+    if (mime.includes("ogg")) {
       return "audio.ogg";
     }
 
-
-    if (
-      mime.includes(
-        "wav"
-      )
-    ) {
+    if (mime.includes("wav")) {
       return "audio.wav";
     }
 
+    if (
+      mime.includes("mp4") ||
+      mime.includes("m4a")
+    ) {
+      return "audio.m4a";
+    }
 
     return "audio.mp3";
   }
@@ -996,7 +1232,7 @@ function nomePadraoPorTipo(
 
 
 // ==========================================
-// FONTE DA MÍDIA ORIGINAL
+// FONTE ORIGINAL DA MÍDIA
 // ==========================================
 
 function obterFonteMidiaOriginal(
@@ -1027,17 +1263,13 @@ function obterFonteMidiaOriginal(
     analise.arquivoUrl
   ) {
     return {
-      tipo:
-        "url",
-
-      origem:
-        "file.url",
+      tipo: "url",
+      origem: "file.url",
 
       valor:
         analise.arquivoUrl,
 
       contentType,
-
       fileName,
     };
   }
@@ -1047,17 +1279,13 @@ function obterFonteMidiaOriginal(
     analise.arquivoData
   ) {
     return {
-      tipo:
-        "base64",
-
-      origem:
-        "file.data",
+      tipo: "base64",
+      origem: "file.data",
 
       valor:
         analise.arquivoData,
 
       contentType,
-
       fileName,
     };
   }
@@ -1068,7 +1296,7 @@ function obterFonteMidiaOriginal(
 
 
 // ==========================================
-// DECODIFICAR BASE64
+// BASE64
 // ==========================================
 
 function decodificarBase64(
@@ -1184,10 +1412,6 @@ async function enviarArquivoSimplificado({
     "application/octet-stream";
 
 
-  // ========================================
-  // URL
-  // ========================================
-
   if (fileUrl) {
     const download =
       await fetch(
@@ -1197,8 +1421,7 @@ async function enviarArquivoSimplificado({
 
     if (!download.ok) {
       return {
-        ok:
-          false,
+        ok: false,
 
         status:
           download.status,
@@ -1227,10 +1450,6 @@ async function enviarArquivoSimplificado({
   }
 
 
-  // ========================================
-  // BASE64
-  // ========================================
-
   else if (fileData) {
     try {
       const decodificado =
@@ -1246,13 +1465,12 @@ async function enviarArquivoSimplificado({
 
       mime =
         decodificado.contentType;
-    } catch (erro) {
-      return {
-        ok:
-          false,
+    }
 
-        status:
-          0,
+    catch (erro) {
+      return {
+        ok: false,
+        status: 0,
 
         resultado:
           erro?.message ||
@@ -1264,11 +1482,8 @@ async function enviarArquivoSimplificado({
 
   else {
     return {
-      ok:
-        false,
-
-      status:
-        0,
+      ok: false,
+      status: 0,
 
       resultado:
         "Arquivo original indisponível.",
@@ -1280,8 +1495,7 @@ async function enviarArquivoSimplificado({
     new Blob(
       [bytes],
       {
-        type:
-          mime,
+        type: mime,
       }
     );
 
@@ -1334,8 +1548,7 @@ async function enviarArquivoSimplificado({
     await fetch(
       "https://app-utalk.umbler.com/api/v1/messages/simplified/",
       {
-        method:
-          "POST",
+        method: "POST",
 
         headers: {
           Authorization:
@@ -1364,7 +1577,7 @@ async function enviarArquivoSimplificado({
 
 
 // ==========================================
-// RESOLVER TELEFONE PELO InReplyTo
+// RESOLVER CLIENTE PELO InReplyTo
 // ==========================================
 
 async function resolverTelefonePorInReplyTo(
@@ -1419,8 +1632,7 @@ async function resolverTelefonePorInReplyTo(
       !consulta.resultado
     ) {
       return {
-        telefone:
-          null,
+        telefone: null,
 
         reason:
           "reply_lookup_error",
@@ -1435,19 +1647,15 @@ async function resolverTelefonePorInReplyTo(
     const telefone =
       extrairTelefoneDoTexto(
         mensagem?.content,
-
         mensagem?.Content,
 
         mensagem?.headerContent,
-
         mensagem?.HeaderContent,
 
         mensagem?.footer,
-
         mensagem?.Footer,
 
         mensagem?.file?.caption,
-
         mensagem?.File?.Caption
       );
 
@@ -1456,7 +1664,6 @@ async function resolverTelefonePorInReplyTo(
       "RESOLVENDO INREPLYTO:",
       {
         nivel,
-
         idAtual,
 
         encontrouTelefone:
@@ -1499,8 +1706,7 @@ async function resolverTelefonePorInReplyTo(
 
 
   return {
-    telefone:
-      null,
+    telefone: null,
 
     reason:
       "client_phone_not_found_in_reply_chain",
@@ -1526,11 +1732,13 @@ function descricaoMidia(
         nome: "Áudio",
       };
 
+
     case "image":
       return {
         emoji: "🖼️",
         nome: "Imagem",
       };
+
 
     case "video":
       return {
@@ -1538,11 +1746,13 @@ function descricaoMidia(
         nome: "Vídeo",
       };
 
+
     case "file":
       return {
         emoji: "📎",
         nome: "Arquivo",
       };
+
 
     case "document":
       return {
@@ -1550,11 +1760,13 @@ function descricaoMidia(
         nome: "Documento",
       };
 
+
     case "sticker":
       return {
         emoji: "🖼️",
         nome: "Sticker",
       };
+
 
     default:
       return {
@@ -1584,10 +1796,10 @@ function tipoMidiaSuportado(
 
 
 // ==========================================
-// ANTI-DUPLICAÇÃO
+// ANTI-DUPLICAÇÃO LOCAL SECUNDÁRIA
 // ==========================================
 
-function marcarMidiaProcessada(
+function marcarMidiaProcessadaLocal(
   messageId
 ) {
   midiasProcessadas.add(
@@ -1637,6 +1849,962 @@ function mensagemInstrucaoResposta(
 
 
 // ==========================================
+// PROCESSAMENTO PRINCIPAL DA MENSAGEM
+// ==========================================
+//
+// Essa função NÃO responde HTTP.
+//
+// Ela retorna:
+//
+// {
+//   body: {...},
+//   liberarDedupe: false
+// }
+//
+// ==========================================
+
+async function processarMensagem(
+  body
+) {
+  const conteudoChat =
+    body?.Payload?.Content ||
+    body?.payload?.content ||
+    {};
+
+
+  const contato =
+    conteudoChat?.Contact ||
+    conteudoChat?.contact ||
+    {};
+
+
+  const ultimaMensagem =
+    conteudoChat?.LastMessage ||
+    conteudoChat?.lastMessage ||
+    {};
+
+
+  // ========================================
+  // CONTATO
+  // ========================================
+
+  const telefoneContato =
+    normalizarTelefone(
+      contato?.PhoneNumber ||
+      contato?.phoneNumber
+    );
+
+
+  const nomeContato =
+    textoValido(
+      contato?.Name ||
+      contato?.name
+    ) ||
+    "Cliente";
+
+
+  const tags =
+    contato?.Tags ||
+    contato?.tags ||
+    [];
+
+
+  // ========================================
+  // MENSAGEM
+  // ========================================
+
+  const mensagemRecebida =
+    textoValido(
+      ultimaMensagem?.Content ||
+      ultimaMensagem?.content
+    );
+
+
+  const source =
+    String(
+      ultimaMensagem?.Source ||
+      ultimaMensagem?.source ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
+
+
+  const messageType =
+    String(
+      ultimaMensagem?.MessageType ||
+      ultimaMensagem?.messageType ||
+      "Text"
+    )
+      .trim()
+      .toLowerCase();
+
+
+  const messageId =
+    textoValido(
+      ultimaMensagem?.Id ||
+      ultimaMensagem?.id
+    );
+
+
+  const inReplyTo =
+    ultimaMensagem?.InReplyTo ||
+    ultimaMensagem?.inReplyTo ||
+    null;
+
+
+  const sentByOrganizationMember =
+    ultimaMensagem
+      ?.SentByOrganizationMember ||
+
+    ultimaMensagem
+      ?.sentByOrganizationMember ||
+
+    null;
+
+
+  const isPrivate =
+    Boolean(
+      ultimaMensagem?.IsPrivate ??
+      ultimaMensagem?.isPrivate
+    );
+
+
+  console.log(
+    "EVENTO RECEBIDO:",
+    {
+      telefoneContato,
+      nomeContato,
+      source,
+      messageType,
+      messageId,
+
+      possuiInReplyTo:
+        Boolean(
+          inReplyTo
+        ),
+
+      isPrivate,
+    }
+  );
+
+
+  if (
+    isPrivate ||
+    !telefoneContato
+  ) {
+    return {
+      body: {
+        received: true,
+        ignored: true,
+      },
+    };
+  }
+
+
+  const consultores =
+    obterConsultoresAutorizados();
+
+
+  const consultorRemetente =
+    consultores.get(
+      telefoneContato
+    );
+
+
+  // ==========================================================
+  // CONSULTOR → CLIENTE
+  // ==========================================================
+
+  if (consultorRemetente) {
+
+    // ======================================
+    // TEXTO
+    // ======================================
+
+    if (
+      messageType ===
+      "text"
+    ) {
+      if (
+        !mensagemRecebida ||
+        !mensagemRecebida
+          .startsWith("#")
+      ) {
+        return {
+          body: {
+            received: true,
+            ignored: true,
+
+            reason:
+              "consultant_non_command",
+          },
+        };
+      }
+
+
+      const comando =
+        mensagemRecebida.match(
+          /^#\s*(\+?\d{10,15})\s+([\s\S]+)$/
+        );
+
+
+      if (!comando) {
+        return {
+          body: {
+            received: true,
+            processed: false,
+
+            reason:
+              "invalid_command_format",
+          },
+        };
+      }
+
+
+      const telefoneCliente =
+        normalizarTelefone(
+          comando[1]
+        );
+
+
+      const mensagemCliente =
+        textoValido(
+          comando[2]
+        );
+
+
+      if (
+        !telefoneCliente ||
+        !mensagemCliente
+      ) {
+        return {
+          body: {
+            received: true,
+            processed: false,
+
+            reason:
+              "invalid_destination",
+          },
+        };
+      }
+
+
+      const envio =
+        await enviarMensagem({
+          toPhone:
+            telefoneCliente,
+
+          message:
+            `*${consultorRemetente.nome}:*\n${mensagemCliente}`,
+        });
+
+
+      if (!envio.ok) {
+        return {
+          body: {
+            received: true,
+            processed: false,
+
+            reason:
+              "client_send_error",
+          },
+        };
+      }
+
+
+      await enviarMensagem({
+        toPhone:
+          telefoneContato,
+
+        contactName:
+          consultorRemetente.nome,
+
+        message:
+          `✅ Resposta enviada ao cliente pela Central.\n\n` +
+
+          `👤 Consultor: ${consultorRemetente.nome}\n` +
+
+          `📱 Cliente: ${telefoneCliente}`,
+      });
+
+
+      return {
+        body: {
+          received: true,
+          processed: true,
+
+          direction:
+            "consultant_to_client_text",
+        },
+      };
+    }
+
+
+    // ======================================
+    // MÍDIA CONSULTOR → CLIENTE
+    // ======================================
+
+    if (
+      tipoMidiaSuportado(
+        messageType
+      )
+    ) {
+      if (
+        source !== "contact" ||
+        sentByOrganizationMember
+      ) {
+        return {
+          body: {
+            received: true,
+            ignored: true,
+
+            reason:
+              "consultant_media_not_incoming_contact",
+          },
+        };
+      }
+
+
+      if (
+        !messageId ||
+        !inReplyTo
+      ) {
+        return {
+          body: {
+            received: true,
+            processed: false,
+
+            reason:
+              "consultant_media_missing_reference",
+          },
+        };
+      }
+
+
+      const destino =
+        await resolverTelefonePorInReplyTo(
+          inReplyTo
+        );
+
+
+      if (!destino.telefone) {
+        return {
+          body: {
+            received: true,
+            processed: false,
+
+            reason:
+              destino.reason ||
+              "client_not_resolved",
+          },
+        };
+      }
+
+
+      const resultadoMidia =
+        await aguardarMidiaOriginal(
+          messageId,
+          ultimaMensagem
+        );
+
+
+      // Aqui ainda não enviamos nada.
+      // Pode liberar o ID para uma
+      // tentativa futura.
+      if (
+        !resultadoMidia.pronta
+      ) {
+        return {
+          liberarDedupe: true,
+
+          body: {
+            received: true,
+            processed: false,
+
+            reason:
+              "consultant_original_media_not_available",
+          },
+        };
+      }
+
+
+      const fonte =
+        obterFonteMidiaOriginal(
+          resultadoMidia.analise,
+          messageType
+        );
+
+
+      if (!fonte) {
+        return {
+          liberarDedupe: true,
+
+          body: {
+            received: true,
+            processed: false,
+
+            reason:
+              "consultant_media_without_original_source",
+          },
+        };
+      }
+
+
+      await enviarMensagem({
+        toPhone:
+          destino.telefone,
+
+        message:
+          `*${consultorRemetente.nome}:*`,
+      });
+
+
+      const envioArquivo =
+        await enviarArquivoSimplificado({
+          toPhone:
+            destino.telefone,
+
+          fileUrl:
+            fonte.tipo === "url"
+              ? fonte.valor
+              : null,
+
+          fileData:
+            fonte.tipo === "base64"
+              ? fonte.valor
+              : null,
+
+          fileName:
+            fonte.fileName,
+
+          contentType:
+            fonte.contentType,
+        });
+
+
+      if (!envioArquivo.ok) {
+        // O nome do consultor já pode ter
+        // sido enviado.
+        //
+        // NÃO liberamos o dedupe para evitar
+        // duplicar essa mensagem.
+        return {
+          body: {
+            received: true,
+            processed: false,
+
+            reason:
+              "consultant_media_send_error",
+          },
+        };
+      }
+
+
+      marcarMidiaProcessadaLocal(
+        messageId
+      );
+
+
+      await enviarMensagem({
+        toPhone:
+          telefoneContato,
+
+        contactName:
+          consultorRemetente.nome,
+
+        message:
+          `✅ Mídia enviada ao cliente pela Central.\n\n` +
+
+          `👤 Consultor: ${consultorRemetente.nome}\n` +
+
+          `📱 Cliente: ${destino.telefone}`,
+      });
+
+
+      return {
+        body: {
+          received: true,
+          processed: true,
+
+          direction:
+            "consultant_to_client_media",
+        },
+      };
+    }
+
+
+    return {
+      body: {
+        received: true,
+        ignored: true,
+
+        reason:
+          "consultant_unsupported_message_type",
+      },
+    };
+  }
+
+
+  // ==========================================================
+  // CLIENTE → CONSULTOR
+  // ==========================================================
+
+  if (
+    source !==
+    "contact"
+  ) {
+    return {
+      body: {
+        received: true,
+        ignored: true,
+
+        reason:
+          "not_contact_message",
+      },
+    };
+  }
+
+
+  const consultorDestino =
+    localizarConsultorPorEtiqueta(
+      consultores,
+      tags
+    );
+
+
+  if (!consultorDestino) {
+    return {
+      body: {
+        received: true,
+        ignored: true,
+
+        reason:
+          "no_consultant_tag",
+      },
+    };
+  }
+
+
+  const numeroComando =
+    telefoneContato
+      .replace(
+        /\D/g,
+        ""
+      );
+
+
+  // ========================================
+  // TEXTO CLIENTE → CONSULTOR
+  // ========================================
+
+  if (
+    messageType ===
+    "text"
+  ) {
+    if (!mensagemRecebida) {
+      return {
+        body: {
+          received: true,
+          ignored: true,
+
+          reason:
+            "empty_text",
+        },
+      };
+    }
+
+
+    const alerta =
+      `🔔 *NOVA MENSAGEM DE CLIENTE*\n\n` +
+
+      `👤 *Cliente:* ${nomeContato}\n` +
+
+      `📱 *Telefone:* ${telefoneContato}\n\n` +
+
+      `💬 *Mensagem do cliente:*\n` +
+
+      `${mensagemRecebida}\n\n` +
+
+      mensagemInstrucaoResposta(
+        numeroComando
+      );
+
+
+    const envio =
+      await enviarMensagem({
+        toPhone:
+          consultorDestino.telefone,
+
+        contactName:
+          consultorDestino.nome,
+
+        message:
+          alerta,
+      });
+
+
+    return {
+      body: {
+        received: true,
+
+        processed:
+          envio.ok,
+
+        direction:
+          "client_to_consultant_text",
+      },
+    };
+  }
+
+
+  // ========================================
+  // MÍDIA CLIENTE → CONSULTOR
+  // ========================================
+
+  if (
+    !tipoMidiaSuportado(
+      messageType
+    )
+  ) {
+    return {
+      body: {
+        received: true,
+        ignored: true,
+
+        reason:
+          "unsupported_message_type",
+      },
+    };
+  }
+
+
+  if (!messageId) {
+    return {
+      body: {
+        received: true,
+        ignored: true,
+
+        reason:
+          "missing_message_id",
+      },
+    };
+  }
+
+
+  // ========================================
+  // SEGUNDA PROTEÇÃO LOCAL
+  // ========================================
+
+  if (
+    midiasProcessadas.has(
+      messageId
+    )
+  ) {
+    return {
+      body: {
+        received: true,
+        ignored: true,
+
+        reason:
+          "media_already_processed_local",
+      },
+    };
+  }
+
+
+  // ========================================
+  // AGUARDAR ORIGINAL
+  // ========================================
+
+  const resultadoMidia =
+    await aguardarMidiaOriginal(
+      messageId,
+      ultimaMensagem
+    );
+
+
+  // Nenhum cabeçalho foi enviado ainda.
+  // Pode liberar o Supabase para nova
+  // tentativa.
+  if (
+    !resultadoMidia.pronta
+  ) {
+    return {
+      liberarDedupe: true,
+
+      body: {
+        received: true,
+        processed: false,
+
+        reason:
+          "original_media_not_available",
+      },
+    };
+  }
+
+
+  const analise =
+    resultadoMidia
+      .analise;
+
+
+  const fonte =
+    obterFonteMidiaOriginal(
+      analise,
+      messageType
+    );
+
+
+  if (!fonte) {
+    return {
+      liberarDedupe: true,
+
+      body: {
+        received: true,
+        processed: false,
+
+        reason:
+          "media_without_original_source",
+      },
+    };
+  }
+
+
+  const tipoMidia =
+    descricaoMidia(
+      messageType
+    );
+
+
+  // ========================================
+  // 1. CABEÇALHO
+  // ========================================
+
+  let cabecalho =
+    `🔔 *NOVA MENSAGEM DE CLIENTE*\n\n` +
+
+    `👤 *Cliente:* ${nomeContato}\n` +
+
+    `📱 *Telefone:* ${telefoneContato}\n\n` +
+
+    `${tipoMidia.emoji} *${tipoMidia.nome} recebido do cliente:*`;
+
+
+  const legendaCliente =
+    mensagemRecebida ||
+    analise.legenda;
+
+
+  if (
+    legendaCliente &&
+    messageType ===
+      "image"
+  ) {
+    cabecalho +=
+      `\n\n📝 *Legenda:*\n${legendaCliente}`;
+  }
+
+
+  if (
+    analise.originalName &&
+    (
+      messageType === "file" ||
+      messageType === "document"
+    )
+  ) {
+    cabecalho +=
+      `\n\n📄 *Arquivo:* ${analise.originalName}`;
+  }
+
+
+  const envioCabecalho =
+    await enviarMensagem({
+      toPhone:
+        consultorDestino.telefone,
+
+      contactName:
+        consultorDestino.nome,
+
+      message:
+        cabecalho,
+    });
+
+
+  if (!envioCabecalho.ok) {
+    // Ainda não conseguimos enviar nada.
+    // Pode liberar.
+    return {
+      liberarDedupe: true,
+
+      body: {
+        received: true,
+        processed: false,
+
+        reason:
+          "media_header_error",
+      },
+    };
+  }
+
+
+  // ========================================
+  // 2. MÍDIA
+  // ========================================
+
+  const envioMidia =
+    await enviarArquivoSimplificado({
+      toPhone:
+        consultorDestino.telefone,
+
+      fileUrl:
+        fonte.tipo === "url"
+          ? fonte.valor
+          : null,
+
+      fileData:
+        fonte.tipo === "base64"
+          ? fonte.valor
+          : null,
+
+      fileName:
+        fonte.fileName,
+
+      contentType:
+        fonte.contentType,
+
+      contactName:
+        consultorDestino.nome,
+    });
+
+
+  if (!envioMidia.ok) {
+    // O cabeçalho já foi enviado.
+    //
+    // NÃO liberamos o dedupe, porque
+    // uma nova execução duplicaria
+    // o cabeçalho.
+    return {
+      body: {
+        received: true,
+        processed: false,
+
+        reason:
+          "media_send_error",
+      },
+    };
+  }
+
+
+  marcarMidiaProcessadaLocal(
+    messageId
+  );
+
+
+  // ========================================
+  // 3. ESPERA
+  //
+  // Cabeçalho
+  //     ↓
+  // Mídia
+  //     ↓
+  // 4 segundos
+  //     ↓
+  // Instrução
+  // ========================================
+
+  console.log(
+    "⏳ AGUARDANDO MÍDIA ANTES DA INSTRUÇÃO:",
+    {
+      messageId,
+
+      tipo:
+        messageType,
+
+      esperaMs:
+        ESPERA_APOS_ENVIO_MIDIA_MS,
+    }
+  );
+
+
+  await esperar(
+    ESPERA_APOS_ENVIO_MIDIA_MS
+  );
+
+
+  // ========================================
+  // 4. INSTRUÇÃO
+  // ========================================
+
+  const envioInstrucao =
+    await enviarMensagem({
+      toPhone:
+        consultorDestino.telefone,
+
+      contactName:
+        consultorDestino.nome,
+
+      message:
+        mensagemInstrucaoResposta(
+          numeroComando
+        ),
+    });
+
+
+  console.log(
+    "✅ FLUXO CLIENTE → CONSULTOR FINALIZADO:",
+    {
+      messageId,
+
+      cliente:
+        telefoneContato,
+
+      consultor:
+        consultorDestino.nome,
+
+      tipo:
+        messageType,
+
+      origem:
+        fonte.origem,
+
+      cabecalho:
+        envioCabecalho.ok,
+
+      midia:
+        envioMidia.ok,
+
+      instrucao:
+        envioInstrucao.ok,
+
+      ordem:
+        "cabecalho > midia > instrucao",
+    }
+  );
+
+
+  return {
+    body: {
+      received: true,
+      processed: true,
+
+      direction:
+        "client_to_consultant_media",
+
+      mediaType:
+        messageType,
+
+      consultor:
+        consultorDestino.nome,
+
+      ordem:
+        "header_media_instruction",
+    },
+  };
+}
+
+
+// ==========================================
 // HANDLER
 // ==========================================
 
@@ -1644,7 +2812,15 @@ export default async function handler(
   req,
   res
 ) {
+  let messageIdClaimed =
+    null;
+
+
   try {
+
+    // ======================================
+    // SEGURANÇA
+    // ======================================
 
     const url =
       new URL(
@@ -1672,17 +2848,18 @@ export default async function handler(
       return res
         .status(200)
         .json({
-          received:
-            true,
-
-          ignored:
-            true,
+          received: true,
+          ignored: true,
 
           reason:
             "invalid_secret",
         });
     }
 
+
+    // ======================================
+    // TESTE GET
+    // ======================================
 
     if (
       req.method ===
@@ -1691,14 +2868,16 @@ export default async function handler(
       return res
         .status(200)
         .json({
-          received:
-            true,
+          received: true,
 
           route:
             "retorno",
 
           status:
             "online",
+
+          dedupe:
+            "supabase",
         });
     }
 
@@ -1710,14 +2889,18 @@ export default async function handler(
       return res
         .status(200)
         .json({
-          received:
-            true,
+          received: true,
+          ignored: true,
 
-          ignored:
-            true,
+          reason:
+            "method_not_supported",
         });
     }
 
+
+    // ======================================
+    // BODY
+    // ======================================
 
     let body =
       req.body;
@@ -1732,15 +2915,14 @@ export default async function handler(
           JSON.parse(
             body
           );
-      } catch {
+      }
+
+      catch {
         return res
           .status(200)
           .json({
-            received:
-              true,
-
-            ignored:
-              true,
+            received: true,
+            ignored: true,
 
             reason:
               "invalid_json",
@@ -1752,6 +2934,10 @@ export default async function handler(
     body =
       body || {};
 
+
+    // ======================================
+    // EVENTO
+    // ======================================
 
     const tipoEvento =
       body.Type ||
@@ -1766,11 +2952,8 @@ export default async function handler(
       return res
         .status(200)
         .json({
-          received:
-            true,
-
-          ignored:
-            true,
+          received: true,
+          ignored: true,
 
           reason:
             "not_message_event",
@@ -1778,70 +2961,23 @@ export default async function handler(
     }
 
 
-    const conteudoChat =
+    // ======================================
+    // PEGAR O MESSAGE ID
+    //
+    // ISTO ACONTECE ANTES DE QUALQUER
+    // ENVIO DE MENSAGEM.
+    // ======================================
+
+    const conteudo =
       body?.Payload?.Content ||
       body?.payload?.content ||
       {};
 
 
-    const contato =
-      conteudoChat?.Contact ||
-      conteudoChat?.contact ||
-      {};
-
-
     const ultimaMensagem =
-      conteudoChat?.LastMessage ||
-      conteudoChat?.lastMessage ||
+      conteudo?.LastMessage ||
+      conteudo?.lastMessage ||
       {};
-
-
-    const telefoneContato =
-      normalizarTelefone(
-        contato?.PhoneNumber ||
-        contato?.phoneNumber
-      );
-
-
-    const nomeContato =
-      textoValido(
-        contato?.Name ||
-        contato?.name
-      ) ||
-      "Cliente";
-
-
-    const tags =
-      contato?.Tags ||
-      contato?.tags ||
-      [];
-
-
-    const mensagemRecebida =
-      textoValido(
-        ultimaMensagem?.Content ||
-        ultimaMensagem?.content
-      );
-
-
-    const source =
-      String(
-        ultimaMensagem?.Source ||
-        ultimaMensagem?.source ||
-        ""
-      )
-        .trim()
-        .toLowerCase();
-
-
-    const messageType =
-      String(
-        ultimaMensagem?.MessageType ||
-        ultimaMensagem?.messageType ||
-        "Text"
-      )
-        .trim()
-        .toLowerCase();
 
 
     const messageId =
@@ -1851,834 +2987,190 @@ export default async function handler(
       );
 
 
-    const inReplyTo =
-      ultimaMensagem?.InReplyTo ||
-      ultimaMensagem?.inReplyTo ||
-      null;
-
-
-    const sentByOrganizationMember =
-      ultimaMensagem?.SentByOrganizationMember ||
-      ultimaMensagem?.sentByOrganizationMember ||
-      null;
-
-
-    const isPrivate =
-      Boolean(
-        ultimaMensagem?.IsPrivate ??
-        ultimaMensagem?.isPrivate
-      );
-
-
-    console.log(
-      "EVENTO RECEBIDO:",
-      {
-        telefoneContato,
-        nomeContato,
-        source,
-        messageType,
-        messageId,
-
-        possuiInReplyTo:
-          Boolean(
-            inReplyTo
-          ),
-
-        isPrivate,
-      }
-    );
-
-
-    if (
-      isPrivate ||
-      !telefoneContato
-    ) {
-      return res
-        .status(200)
-        .json({
-          received:
-            true,
-
-          ignored:
-            true,
-        });
-    }
-
-
-    const consultores =
-      obterConsultoresAutorizados();
-
-
-    const consultorRemetente =
-      consultores.get(
-        telefoneContato
-      );
-
-
-    // =============================================================
-    // CONSULTOR → CLIENTE
-    // =============================================================
-
-    if (consultorRemetente) {
-
-      // ====================================
-      // TEXTO
-      // ====================================
-
-      if (
-        messageType ===
-        "text"
-      ) {
-        if (
-          !mensagemRecebida ||
-          !mensagemRecebida
-            .startsWith("#")
-        ) {
-          return res
-            .status(200)
-            .json({
-              received:
-                true,
-
-              ignored:
-                true,
-
-              reason:
-                "consultant_non_command",
-            });
-        }
-
-
-        const comando =
-          mensagemRecebida.match(
-            /^#\s*(\+?\d{10,15})\s+([\s\S]+)$/
-          );
-
-
-        if (!comando) {
-          return res
-            .status(200)
-            .json({
-              received:
-                true,
-
-              processed:
-                false,
-
-              reason:
-                "invalid_command_format",
-            });
-        }
-
-
-        const telefoneCliente =
-          normalizarTelefone(
-            comando[1]
-          );
-
-
-        const mensagemCliente =
-          textoValido(
-            comando[2]
-          );
-
-
-        if (
-          !telefoneCliente ||
-          !mensagemCliente
-        ) {
-          return res
-            .status(200)
-            .json({
-              received:
-                true,
-
-              processed:
-                false,
-            });
-        }
-
-
-        const envio =
-          await enviarMensagem({
-            toPhone:
-              telefoneCliente,
-
-            message:
-              `*${consultorRemetente.nome}:*\n${mensagemCliente}`,
-          });
-
-
-        if (!envio.ok) {
-          return res
-            .status(200)
-            .json({
-              received:
-                true,
-
-              processed:
-                false,
-            });
-        }
-
-
-        await enviarMensagem({
-          toPhone:
-            telefoneContato,
-
-          contactName:
-            consultorRemetente.nome,
-
-          message:
-            `✅ Resposta enviada ao cliente pela Central.\n\n` +
-
-            `👤 Consultor: ${consultorRemetente.nome}\n` +
-
-            `📱 Cliente: ${telefoneCliente}`,
-        });
-
-
-        return res
-          .status(200)
-          .json({
-            received:
-              true,
-
-            processed:
-              true,
-
-            direction:
-              "consultant_to_client_text",
-          });
-      }
-
-
-      // ====================================
-      // MÍDIA CONSULTOR → CLIENTE
-      // ====================================
-
-      if (
-        tipoMidiaSuportado(
-          messageType
-        )
-      ) {
-
-        if (
-          source !==
-            "contact" ||
-
-          sentByOrganizationMember
-        ) {
-          return res
-            .status(200)
-            .json({
-              received:
-                true,
-
-              ignored:
-                true,
-            });
-        }
-
-
-        if (
-          !messageId ||
-          !inReplyTo
-        ) {
-          return res
-            .status(200)
-            .json({
-              received:
-                true,
-
-              processed:
-                false,
-            });
-        }
-
-
-        const destino =
-          await resolverTelefonePorInReplyTo(
-            inReplyTo
-          );
-
-
-        if (!destino.telefone) {
-          return res
-            .status(200)
-            .json({
-              received:
-                true,
-
-              processed:
-                false,
-            });
-        }
-
-
-        const resultadoMidia =
-          await aguardarMidiaOriginal(
-            messageId,
-            ultimaMensagem
-          );
-
-
-        if (
-          !resultadoMidia.pronta
-        ) {
-          return res
-            .status(200)
-            .json({
-              received:
-                true,
-
-              processed:
-                false,
-            });
-        }
-
-
-        const fonte =
-          obterFonteMidiaOriginal(
-            resultadoMidia.analise,
-            messageType
-          );
-
-
-        if (!fonte) {
-          return res
-            .status(200)
-            .json({
-              received:
-                true,
-
-              processed:
-                false,
-            });
-        }
-
-
-        await enviarMensagem({
-          toPhone:
-            destino.telefone,
-
-          message:
-            `*${consultorRemetente.nome}:*`,
-        });
-
-
-        const envioArquivo =
-          await enviarArquivoSimplificado({
-            toPhone:
-              destino.telefone,
-
-            fileUrl:
-              fonte.tipo ===
-              "url"
-                ? fonte.valor
-                : null,
-
-            fileData:
-              fonte.tipo ===
-              "base64"
-                ? fonte.valor
-                : null,
-
-            fileName:
-              fonte.fileName,
-
-            contentType:
-              fonte.contentType,
-          });
-
-
-        if (!envioArquivo.ok) {
-          return res
-            .status(200)
-            .json({
-              received:
-                true,
-
-              processed:
-                false,
-            });
-        }
-
-
-        marcarMidiaProcessada(
-          messageId
-        );
-
-
-        await enviarMensagem({
-          toPhone:
-            telefoneContato,
-
-          contactName:
-            consultorRemetente.nome,
-
-          message:
-            `✅ Mídia enviada ao cliente pela Central.\n\n` +
-
-            `👤 Consultor: ${consultorRemetente.nome}\n` +
-
-            `📱 Cliente: ${destino.telefone}`,
-        });
-
-
-        return res
-          .status(200)
-          .json({
-            received:
-              true,
-
-            processed:
-              true,
-
-            direction:
-              "consultant_to_client_media",
-          });
-      }
-    }
-
-
-    // =============================================================
-    // CLIENTE → CONSULTOR
-    // =============================================================
-
-    if (
-      source !==
-      "contact"
-    ) {
-      return res
-        .status(200)
-        .json({
-          received:
-            true,
-
-          ignored:
-            true,
-        });
-    }
-
-
-    const consultorDestino =
-      localizarConsultorPorEtiqueta(
-        consultores,
-        tags
-      );
-
-
-    if (!consultorDestino) {
-      return res
-        .status(200)
-        .json({
-          received:
-            true,
-
-          ignored:
-            true,
-
-          reason:
-            "no_consultant_tag",
-        });
-    }
-
-
-    const numeroComando =
-      telefoneContato
-        .replace(
-          /\D/g,
-          ""
-        );
-
-
     // ======================================
-    // TEXTO
+    // SEM MESSAGE ID
+    //
+    // Não processamos eventos sem ID porque
+    // não conseguiríamos garantir
+    // idempotência.
     // ======================================
-
-    if (
-      messageType ===
-      "text"
-    ) {
-      if (!mensagemRecebida) {
-        return res
-          .status(200)
-          .json({
-            received:
-              true,
-
-            ignored:
-              true,
-          });
-      }
-
-
-      const alerta =
-        `🔔 *NOVA MENSAGEM DE CLIENTE*\n\n` +
-
-        `👤 *Cliente:* ${nomeContato}\n` +
-
-        `📱 *Telefone:* ${telefoneContato}\n\n` +
-
-        `💬 *Mensagem do cliente:*\n` +
-
-        `${mensagemRecebida}\n\n` +
-
-        mensagemInstrucaoResposta(
-          numeroComando
-        );
-
-
-      const envio =
-        await enviarMensagem({
-          toPhone:
-            consultorDestino.telefone,
-
-          contactName:
-            consultorDestino.nome,
-
-          message:
-            alerta,
-        });
-
-
-      return res
-        .status(200)
-        .json({
-          received:
-            true,
-
-          processed:
-            envio.ok,
-
-          direction:
-            "client_to_consultant_text",
-        });
-    }
-
-
-    // ======================================
-    // MÍDIA CLIENTE → CONSULTOR
-    // ======================================
-
-    if (
-      !tipoMidiaSuportado(
-        messageType
-      )
-    ) {
-      return res
-        .status(200)
-        .json({
-          received:
-            true,
-
-          ignored:
-            true,
-        });
-    }
-
 
     if (!messageId) {
-      return res
-        .status(200)
-        .json({
-          received:
-            true,
-
-          ignored:
-            true,
-        });
-    }
-
-
-    const resultadoMidia =
-      await aguardarMidiaOriginal(
-        messageId,
-        ultimaMensagem
+      console.warn(
+        "⚠️ EVENTO SEM MESSAGE ID IGNORADO"
       );
 
 
-    if (
-      !resultadoMidia.pronta
-    ) {
       return res
         .status(200)
         .json({
-          received:
-            true,
-
-          processed:
-            false,
+          received: true,
+          ignored: true,
 
           reason:
-            "original_media_not_available",
-        });
-    }
-
-
-    const analise =
-      resultadoMidia
-        .analise;
-
-
-    const fonte =
-      obterFonteMidiaOriginal(
-        analise,
-        messageType
-      );
-
-
-    if (!fonte) {
-      return res
-        .status(200)
-        .json({
-          received:
-            true,
-
-          processed:
-            false,
-        });
-    }
-
-
-    const tipoMidia =
-      descricaoMidia(
-        messageType
-      );
-
-
-    // ======================================
-    // 1. CABEÇALHO
-    // ======================================
-
-    let cabecalho =
-      `🔔 *NOVA MENSAGEM DE CLIENTE*\n\n` +
-
-      `👤 *Cliente:* ${nomeContato}\n` +
-
-      `📱 *Telefone:* ${telefoneContato}\n\n` +
-
-      `${tipoMidia.emoji} *${tipoMidia.nome} recebido do cliente:*`;
-
-
-    const legendaCliente =
-      mensagemRecebida ||
-      analise.legenda;
-
-
-    if (
-      legendaCliente &&
-      messageType ===
-        "image"
-    ) {
-      cabecalho +=
-        `\n\n📝 *Legenda:*\n${legendaCliente}`;
-    }
-
-
-    const envioCabecalho =
-      await enviarMensagem({
-        toPhone:
-          consultorDestino.telefone,
-
-        contactName:
-          consultorDestino.nome,
-
-        message:
-          cabecalho,
-      });
-
-
-    if (!envioCabecalho.ok) {
-      return res
-        .status(200)
-        .json({
-          received:
-            true,
-
-          processed:
-            false,
-
-          reason:
-            "media_header_error",
+            "missing_message_id",
         });
     }
 
 
     // ======================================
-    // 2. MÍDIA
-    // ======================================
-
-    const envioMidia =
-      await enviarArquivoSimplificado({
-        toPhone:
-          consultorDestino.telefone,
-
-        fileUrl:
-          fonte.tipo ===
-          "url"
-            ? fonte.valor
-            : null,
-
-        fileData:
-          fonte.tipo ===
-          "base64"
-            ? fonte.valor
-            : null,
-
-        fileName:
-          fonte.fileName,
-
-        contentType:
-          fonte.contentType,
-
-        contactName:
-          consultorDestino.nome,
-      });
-
-
-    if (!envioMidia.ok) {
-      return res
-        .status(200)
-        .json({
-          received:
-            true,
-
-          processed:
-            false,
-
-          reason:
-            "media_send_error",
-        });
-    }
-
-
-    marcarMidiaProcessada(
-      messageId
-    );
-
-
-    // ======================================
-    // 3. ESPERAR A MÍDIA APARECER
+    // SUPABASE CLAIM
     //
-    // IMPORTANTE:
-    // impede a mensagem de instrução
-    // de ultrapassar a mídia.
+    // AQUI ESTÁ A TRAVA PRINCIPAL.
     // ======================================
 
-    console.log(
-      "⏳ AGUARDANDO MÍDIA ANTES DA INSTRUÇÃO:",
-      {
-        messageId,
-
-        tipo:
-          messageType,
-
-        esperaMs:
-          ESPERA_APOS_ENVIO_MIDIA_MS,
-      }
-    );
-
-
-    await esperar(
-      ESPERA_APOS_ENVIO_MIDIA_MS
-    );
+    const claim =
+      await assumirWebhook(
+        messageId
+      );
 
 
     // ======================================
-    // 4. INSTRUÇÃO
+    // SE O SUPABASE ESTIVER FORA
+    //
+    // NÃO processamos.
+    //
+    // É melhor segurar uma mensagem
+    // temporariamente do que voltar a
+    // mandar três cópias.
     // ======================================
 
-    const envioInstrucao =
-      await enviarMensagem({
-        toPhone:
-          consultorDestino.telefone,
+    if (!claim.ok) {
+      return res
+        .status(200)
+        .json({
+          received: true,
+          processed: false,
 
-        contactName:
-          consultorDestino.nome,
-
-        message:
-          mensagemInstrucaoResposta(
-            numeroComando
-          ),
-      });
+          reason:
+            "dedupe_unavailable",
+        });
+    }
 
 
-    console.log(
-      "✅ FLUXO CLIENTE → CONSULTOR FINALIZADO:",
-      {
-        messageId,
+    // ======================================
+    // OUTRA EXECUÇÃO JÁ GANHOU
+    // ======================================
 
-        cliente:
-          telefoneContato,
+    if (!claim.claimed) {
+      console.log(
+        "♻️ WEBHOOK DUPLICADO IGNORADO:",
+        {
+          messageId,
+        }
+      );
 
-        consultor:
-          consultorDestino.nome,
 
-        tipo:
-          messageType,
+      return res
+        .status(200)
+        .json({
+          received: true,
+          ignored: true,
 
-        origem:
-          fonte.origem,
+          duplicate: true,
 
-        cabecalho:
-          envioCabecalho.ok,
+          messageId,
 
-        midia:
-          envioMidia.ok,
+          reason:
+            "duplicate_message",
+        });
+    }
 
-        instrucao:
-          envioInstrucao.ok,
 
-        ordem:
-          "cabecalho > midia > instrucao",
-      }
-    );
+    // Marcamos que esta execução
+    // possui a trava.
+    messageIdClaimed =
+      messageId;
+
+
+    // ======================================
+    // PROCESSAMENTO NORMAL
+    // ======================================
+
+    const resultado =
+      await processarMensagem(
+        body
+      );
+
+
+    // ======================================
+    // LIBERAR PARA UMA NOVA TENTATIVA
+    // ======================================
+
+    if (
+      resultado
+        ?.liberarDedupe ===
+      true
+    ) {
+      await liberarWebhook(
+        messageId
+      );
+
+
+      messageIdClaimed =
+        null;
+    }
+
+
+    // ======================================
+    // CONCLUIR
+    // ======================================
+
+    else {
+      await concluirWebhook(
+        messageId
+      );
+
+
+      messageIdClaimed =
+        null;
+    }
 
 
     return res
       .status(200)
-      .json({
-        received:
-          true,
-
-        processed:
-          true,
-
-        direction:
-          "client_to_consultant_media",
-
-        mediaType:
-          messageType,
-
-        consultor:
-          consultorDestino.nome,
-
-        ordem:
-          "header_media_instruction",
-      });
+      .json(
+        resultado?.body || {
+          received: true,
+        }
+      );
 
 
   } catch (error) {
 
     console.error(
-      "ERRO NO RETORNO:",
+      "❌ ERRO NO RETORNO:",
       error
     );
+
+
+    // ======================================
+    // SE DEU ERRO ANTES DE FINALIZAR,
+    // LIBERAMOS A TRAVA.
+    // ======================================
+
+    if (messageIdClaimed) {
+      try {
+        await liberarWebhook(
+          messageIdClaimed
+        );
+      } catch (
+        erroRelease
+      ) {
+        console.error(
+          "❌ ERRO AO LIBERAR DEDUPE:",
+          erroRelease
+        );
+      }
+    }
 
 
     return res
       .status(200)
       .json({
-        received:
-          true,
-
-        processed:
-          false,
-
-        error:
-          true,
+        received: true,
+        processed: false,
+        error: true,
       });
   }
 }
